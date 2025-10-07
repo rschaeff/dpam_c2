@@ -59,10 +59,10 @@ class AddSS(ExternalTool):
     """
     Wrapper for addss.pl (add secondary structure to A3M).
     """
-    
+
     def __init__(self):
         super().__init__('addss.pl', check_available=True, required=True)
-    
+
     def run(
         self,
         input_a3m: Path,
@@ -71,7 +71,7 @@ class AddSS(ExternalTool):
     ) -> None:
         """
         Add secondary structure prediction to A3M.
-        
+
         Args:
             input_a3m: Input A3M file
             output_a3m: Output A3M file with SS
@@ -83,9 +83,34 @@ class AddSS(ExternalTool):
             str(output_a3m),
             '-a3m'
         ]
-        
+
+        # Set PERL5LIB and HHLIB for HHsuite Perl scripts
+        import os
+        import shutil
+        env = os.environ.copy()
+
+        # Find HHsuite installation directory from addss.pl path
+        addss_full_path = shutil.which(self.executable)
+        if addss_full_path:
+            addss_path = Path(addss_full_path).resolve()
+        else:
+            addss_path = Path(self.executable).resolve()
+
+        scripts_dir = addss_path.parent
+        hhsuite_dir = scripts_dir.parent  # /sw/apps/hh-suite
+
+        # Set PERL5LIB for HHPaths.pm
+        if 'PERL5LIB' in env:
+            env['PERL5LIB'] = f"{scripts_dir}:{env['PERL5LIB']}"
+        else:
+            env['PERL5LIB'] = str(scripts_dir)
+
+        # Set HHLIB for HHPaths.pm to find correct paths
+        env['HHLIB'] = str(hhsuite_dir)
+
         logger.info(f"Running addss.pl for {input_a3m.name}")
-        self._execute(cmd, cwd=working_dir, capture_output=True)
+        logger.debug(f"PERL5LIB={env['PERL5LIB']}, HHLIB={env['HHLIB']}")
+        self._execute(cmd, cwd=working_dir, capture_output=True, env=env)
         logger.info(f"addss.pl completed: {output_a3m}")
 
 
@@ -169,46 +194,73 @@ class HHSearch(ExternalTool):
 
 def run_hhsearch_pipeline(
     fasta_file: Path,
-    database_dir: Path,
-    output_prefix: Path,
+    database_dir: Optional[Path] = None,
+    output_prefix: Optional[Path] = None,
     cpus: int = 1,
-    working_dir: Optional[Path] = None
+    working_dir: Optional[Path] = None,
+    uniref_db: Optional[Path] = None,
+    pdb70_db: Optional[Path] = None,
+    skip_addss: bool = True
 ) -> Path:
     """
-    Run complete HHsearch pipeline: hhblits → addss → hhmake → hhsearch.
-    
+    Run complete HHsearch pipeline: hhblits → (addss) → hhmake → hhsearch.
+
     Args:
         fasta_file: Input FASTA file
-        database_dir: Directory containing databases
+        database_dir: Directory containing databases (legacy, auto-finds DBs)
         output_prefix: Output file prefix (no extension)
         cpus: Number of CPUs
         working_dir: Working directory
-    
+        uniref_db: Direct path to UniRef database (overrides database_dir)
+        pdb70_db: Direct path to PDB70 database (overrides database_dir)
+        skip_addss: Skip addss.pl (secondary structure prediction). Default True.
+                    LIMITATION: Currently True due to missing PSIPRED dependencies.
+                    May affect output compatibility with DPAM v1.0.
+
     Returns:
         Path to hhsearch output file
     """
     logger.info(f"Starting HHsearch pipeline for {fasta_file.name}")
-    
+
     # Define file paths
+    if output_prefix is None:
+        output_prefix = fasta_file.with_suffix('')
+
     a3m_file = output_prefix.with_suffix('.a3m')
     a3m_ss_file = output_prefix.with_suffix('.a3m.ss')
     hmm_file = output_prefix.with_suffix('.hmm')
     hhsearch_file = output_prefix.with_suffix('.hhsearch')
-    
-    # Databases
-    uniref_db = database_dir / 'UniRef30_2022_02' / 'UniRef30_2022_02'
-    pdb70_db = database_dir / 'pdb70' / 'pdb70'
+
+    # Determine database paths
+    if uniref_db is None and database_dir is not None:
+        # Legacy mode: construct from database_dir
+        uniref_db = database_dir / 'UniRef30_2022_02' / 'UniRef30_2022_02'
+
+    if pdb70_db is None and database_dir is not None:
+        # Legacy mode: construct from database_dir
+        pdb70_db = database_dir / 'pdb70' / 'pdb70'
+
+    if uniref_db is None or pdb70_db is None:
+        raise ValueError("Must provide either database_dir or both uniref_db and pdb70_db")
     
     # Run pipeline
     hhblits = HHBlits()
     hhblits.run(fasta_file, uniref_db, a3m_file, cpus, working_dir)
-    
-    addss = AddSS()
-    addss.run(a3m_file, a3m_ss_file, working_dir)
-    
-    # Replace original A3M with SS-annotated version
-    import shutil
-    shutil.move(str(a3m_ss_file), str(a3m_file))
+
+    # Secondary structure prediction (optional, requires PSIPRED)
+    if not skip_addss:
+        addss = AddSS()
+        addss.run(a3m_file, a3m_ss_file, working_dir)
+
+        # Replace original A3M with SS-annotated version
+        import shutil
+        shutil.move(str(a3m_ss_file), str(a3m_file))
+    else:
+        logger.warning(
+            "Skipping addss.pl (secondary structure prediction). "
+            "This may affect result quality and compatibility with DPAM v1.0. "
+            "To enable, set skip_addss=False and ensure PSIPRED is installed."
+        )
     
     hhmake = HHMake()
     hhmake.run(a3m_file, hmm_file, working_dir)

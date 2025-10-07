@@ -64,27 +64,32 @@ class ExternalTool(ABC):
         cwd: Optional[Path] = None,
         log_file: Optional[Path] = None,
         capture_output: bool = False,
-        check: bool = True
+        check: bool = True,
+        env: Optional[Dict[str, str]] = None
     ) -> subprocess.CompletedProcess:
         """
         Execute command with logging.
-        
+
         Args:
             cmd: Command and arguments
             cwd: Working directory
             log_file: Optional log file for stdout/stderr
             capture_output: Capture stdout/stderr
             check: Raise exception on non-zero exit code
-        
+            env: Optional environment variables dict
+
         Returns:
             CompletedProcess result
         """
         logger.debug(f"Executing: {' '.join(str(c) for c in cmd)}")
-        
+
         kwargs = {
             'cwd': cwd,
             'text': True,
         }
+
+        if env is not None:
+            kwargs['env'] = env
         
         if log_file:
             log_file.parent.mkdir(parents=True, exist_ok=True)

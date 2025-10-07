@@ -66,32 +66,39 @@ def residues_to_range(
 def range_to_residues(range_string: str) -> Set[int]:
     """
     Parse range string into set of residue IDs.
-    
+
     Args:
         range_string: Range like "10-50,60-100" or "A:10-50,A:60-100"
-    
+
     Returns:
         Set of residue IDs
-    
+
     Examples:
         >>> range_to_residues("10-50,60-100")
         {10, 11, ..., 50, 60, 61, ..., 100}
         >>> range_to_residues("A:10-20")
         {10, 11, ..., 20}
     """
+    if not range_string:
+        return set()
+
     residues = set()
-    
+
     for segment in range_string.split(','):
+        segment = segment.strip()
+        if not segment:
+            continue
+
         # Remove chain ID if present
         if ':' in segment:
             segment = segment.split(':', 1)[1]
-        
+
         if '-' in segment:
             start, end = segment.split('-')
             residues.update(range(int(start), int(end) + 1))
         else:
             residues.add(int(segment))
-    
+
     return residues
 
 

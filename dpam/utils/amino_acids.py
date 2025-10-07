@@ -49,11 +49,29 @@ def three_to_one(three_letter: str) -> str:
 def one_to_three(one_letter: str) -> str:
     """
     Convert one-letter amino acid code to three-letter.
-    
+
     Args:
         one_letter: One-letter code (e.g., "A")
-    
+
     Returns:
         Three-letter code (e.g., "ALA"), or "UNK" if unknown
     """
     return ONE_TO_THREE.get(one_letter.upper(), "UNK")
+
+
+def is_valid_amino_acid(code: str) -> bool:
+    """
+    Check if a code is a valid amino acid (one-letter or three-letter).
+
+    Args:
+        code: Amino acid code (e.g., "A" or "ALA")
+
+    Returns:
+        True if valid, False otherwise
+    """
+    code_upper = code.upper()
+    if len(code) == 1:
+        return code_upper in ONE_TO_THREE
+    elif len(code) == 3:
+        return code_upper in THREE_TO_ONE
+    return False

@@ -109,5 +109,5 @@ class TestStep01Prepare:
         # Validate it's valid JSON
         import json
         with open(json_file) as f:
-            data = json.load()
+            data = json.load(f)
         assert data is not None, "JSON should be valid"

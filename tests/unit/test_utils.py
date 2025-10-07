@@ -9,6 +9,7 @@ from dpam.utils.ranges import range_to_residues, residues_to_range
 from dpam.utils.amino_acids import three_to_one, one_to_three, is_valid_amino_acid
 
 
+@pytest.mark.unit
 class TestRangeParsing:
     """Tests for range parsing functions."""
 
@@ -95,6 +96,7 @@ class TestRangeParsing:
         assert result == ""
 
 
+@pytest.mark.unit
 class TestAminoAcids:
     """Tests for amino acid conversion functions."""
 
@@ -111,8 +113,7 @@ class TestAminoAcids:
 
     def test_three_to_one_invalid(self):
         """Test invalid three-letter code."""
-        with pytest.raises(KeyError):
-            three_to_one("XXX")
+        assert three_to_one("XXX") == "X"
 
     def test_one_to_three_standard(self):
         """Test one-letter to three-letter conversion."""
@@ -127,8 +128,7 @@ class TestAminoAcids:
 
     def test_one_to_three_invalid(self):
         """Test invalid one-letter code."""
-        with pytest.raises(KeyError):
-            one_to_three("X")
+        assert one_to_three("X") == "UNK"
 
     def test_is_valid_amino_acid_one_letter(self):
         """Test validation of one-letter codes."""
@@ -157,6 +157,7 @@ class TestAminoAcids:
             assert three_to_one(one_to_three(aa)) == aa
 
 
+@pytest.mark.unit
 class TestRangeEdgeCases:
     """Edge case tests for range functions."""
 

@@ -97,6 +97,14 @@ def dssp_available():
     return True
 
 
+@pytest.fixture(scope="session")
+def foldseek_available():
+    """Check if foldseek is available."""
+    if shutil.which("foldseek") is None:
+        pytest.skip("foldseek not available")
+    return True
+
+
 # Fixture to copy test files to working directory
 
 @pytest.fixture(scope="function")

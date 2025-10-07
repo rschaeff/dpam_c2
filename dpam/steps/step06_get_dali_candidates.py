@@ -15,43 +15,46 @@ logger = get_logger('steps.dali_candidates')
 
 def read_domains_from_map_ecod(file_path: Path) -> Set[str]:
     """
-    Read ECOD domain numbers from map2ecod.result file.
-    
+    Read ECOD domain IDs from map2ecod.result file.
+
+    Reads the ecod_domain_id column (second column) to get domain IDs
+    like 'e2rspA1' for use as DALI template names.
+
     Args:
         file_path: Path to map2ecod.result
-    
+
     Returns:
-        Set of ECOD domain numbers
+        Set of ECOD domain IDs (e.g., 'e2rspA1')
     """
     domains = set()
-    
+
     if not file_path.exists():
         logger.warning(f"Map2ecod file not found: {file_path}")
         return domains
-    
+
     with open(file_path, 'r') as f:
         for i, line in enumerate(f):
             if i == 0:  # Skip header
                 continue
-            
+
             words = line.split()
-            if words:
-                ecod_num = words[0]
-                domains.add(ecod_num)
-    
+            if len(words) >= 2:
+                ecod_id = words[1]  # Second column: ecod_domain_id
+                domains.add(ecod_id)
+
     logger.debug(f"Read {len(domains)} domains from map2ecod")
     return domains
 
 
 def read_domains_from_foldseek(file_path: Path) -> Set[str]:
     """
-    Read ECOD domain numbers from foldseek.flt.result file.
-    
+    Read ECOD domain IDs from foldseek.flt.result file.
+
     Args:
         file_path: Path to foldseek.flt.result
-    
+
     Returns:
-        Set of ECOD domain numbers
+        Set of ECOD domain IDs (e.g., 'e2rspA1')
     """
     domains = set()
     

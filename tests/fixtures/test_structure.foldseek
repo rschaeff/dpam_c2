@@ -1,0 +1,15 @@
+test_structure	e6qdnA1.1	0.950	100	1	0	10	50	15	55	1.2e-10	100.5
+test_structure	e5jb7A1.1	0.920	95	2	1	15	60	20	65	2.5e-09	95.3
+test_structure	e4hkrA1.1	0.880	90	3	0	25	70	30	75	5.1e-08	88.7
+test_structure	e3mxhA1.1	0.850	85	4	1	35	80	40	85	1.3e-07	82.4
+test_structure	e2qyzA1.1	0.820	80	5	0	45	90	50	95	3.7e-07	76.8
+test_structure	e1a2bA1.1	0.800	75	6	1	55	100	60	105	8.2e-07	71.2
+test_structure	e7xyzA1.1	0.780	70	7	0	10	30	12	32	1.5e-06	65.5
+test_structure	e8abcA1.1	0.750	65	8	1	20	40	25	45	3.2e-06	60.1
+test_structure	e9defA1.1	0.720	60	9	0	30	50	35	55	7.8e-06	55.3
+test_structure	e1ghiA1.1	0.690	55	10	1	40	60	45	65	1.6e-05	50.7
+test_structure	e2jklA1.1	0.650	50	11	0	50	70	55	75	3.5e-05	45.2
+test_structure	e3mnoA1.1	0.620	45	12	1	60	80	65	85	7.1e-05	40.8
+test_structure	e4pqrA1.1	0.580	40	13	0	10	25	15	30	1.4e-04	35.6
+test_structure	e5stuA1.1	0.550	35	14	1	15	35	20	40	2.9e-04	31.2
+test_structure	e6vwxA1.1	0.520	30	15	0	25	45	30	50	5.8e-04	27.4

@@ -15,10 +15,18 @@ class Foldseek(ExternalTool):
     """
     Wrapper for Foldseek structure search tool.
     """
-    
+
     def __init__(self):
         super().__init__('foldseek', check_available=True, required=True)
-    
+
+    def run(self, **kwargs):
+        """
+        Run foldseek easy-search (required by ExternalTool base class).
+
+        Delegates to easy_search method.
+        """
+        return self.easy_search(**kwargs)
+
     def easy_search(
         self,
         query_pdb: Path,

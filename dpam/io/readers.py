@@ -102,9 +102,9 @@ def read_structure_from_cif(
     for residue in chain:
         resid = residue.seqid.num
         resname = residue.name
-        
-        # Skip non-ATOM records (handled by Gemmi automatically)
-        if not any(atom.is_atom() for atom in residue):
+
+        # Skip HETATM records (only process ATOM records)
+        if residue.het_flag == 'H':
             continue
         
         # Get amino acid
@@ -122,12 +122,12 @@ def read_structure_from_cif(
                 )
                 resid_to_altloc[resid] = first_altloc
         
-        # Collect atom coordinates
+        # Collect atom coordinates (skip hydrogens)
         coords = []
         for atom in residue:
-            if not atom.is_atom():
+            if atom.is_hydrogen():
                 continue
-            
+
             # Filter by alternate location
             if has_altloc:
                 if atom.altloc == '\0' or atom.altloc == resid_to_altloc[resid]:
@@ -186,15 +186,16 @@ def read_structure_from_pdb(
     for residue in chain:
         resid = residue.seqid.num
         resname = residue.name
-        
-        if not any(atom.is_atom() for atom in residue):
+
+        # Skip HETATM records
+        if residue.het_flag == 'H':
             continue
         
         aa = three_to_one(resname)
         
         coords = []
         for atom in residue:
-            if atom.is_atom():
+            if not atom.is_hydrogen():
                 coords.append([atom.pos.x, atom.pos.y, atom.pos.z])
         
         if coords:

@@ -1,0 +1,74 @@
+Query         test_structure
+Match_columns 75
+No_of_seqs    100 out of 500
+Neff          8.2
+Searched_HMMs 70000
+Date          Mon Oct  7 01:00:00 2024
+Command       hhsearch -i test_structure.hmm -d pdb70 -o test_structure.hhsearch
+
+ No Hit                             Prob E-value P-value  Score    SS Cols Query HMM  Template HMM
+  1 2rsp_A                          99.8 2.1e-25 3.0e-30  125.5   0.0   50    10-59      15-64 (124)
+  2 2pma_A                          98.5 8.5e-15 1.2e-19   95.3   0.0   45    15-59      20-64 (141)
+  3 1eu1_A                          97.2 3.2e-10 4.6e-15   85.7   0.0   40    20-59      25-64 (155)
+  4 2iv2_X                          95.8 1.5e-08 2.1e-13   78.4   0.0   38    22-59      28-65 (151)
+  5 1kqf_A                          93.5 7.8e-07 1.1e-11   70.2   0.0   35    25-59      30-64 (165)
+
+>2rsp_A
+Probab=99.82  E-value=2.1e-25  Score=125.50  Aligned_cols=50  Identities=48%  Similarity=1.234  Sum_probs=45.6  Template_Neff=7.8
+
+Q test_structure    10 MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQL   59 (75)
+Q Consensus        10 mqifvktltgktitlevepsdtienvkakiqdkegippdqqrlifagkql   59 (75)
+                      |||||||||||||||||||||||||||||||||||||||||||||||||
+T Consensus        15 mqifvktltgktitlevepsdtienvkakiqdkegippdqqrlifagkql   64 (124)
+T 2rsp_A           15 MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQL   64 (124)
+T ss_dssp             CEEEEECCCCCCCEEEEEECCCCCCCCEEEEEECCCCCCCCEEEEEECC
+T ss_pred             CCEEEEEcccCCCceEEEEEcCCCCCCCEEEEEcCCCCCCCcEEEEEECC
+
+
+>2pma_A
+Probab=98.54  E-value=8.5e-15  Score=95.30  Aligned_cols=45  Identities=42%  Similarity=1.123  Sum_probs=42.1  Template_Neff=6.9
+
+Q test_structure    15 KTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGK   59 (75)
+Q Consensus        15 ktltgktitlevepsdtienvkakiqdkegippdqqrlifagk   59 (75)
+                      |||||||||||||||||||||||||||||||||||||||||||
+T Consensus        20 ktltgktitlevepsdtienvkakiqdkegippdqqrlifagk   64 (141)
+T 2pma_A           20 KTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGK   64 (141)
+T ss_dssp             EEEECCCCCCCEEEEEECCCCCCCCEEEEEECCCCCCCCEEEE
+T ss_pred             EEEEcccCCCceEEEEEcCCCCCCCEEEEEcCCCCCCCcEEEE
+
+
+>1eu1_A
+Probab=97.23  E-value=3.2e-10  Score=85.70  Aligned_cols=40  Identities=38%  Similarity=1.045  Sum_probs=38.5  Template_Neff=6.2
+
+Q test_structure    20 KTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGK   59 (75)
+Q Consensus        20 ktitlevepsdtienvkakiqdkegippdqqrlifagk   59 (75)
+                      ||||||||||||||||||||||||||||||||||||
+T Consensus        25 ktitlevepsdtienvkakiqdkegippdqqrlifagk   64 (155)
+T 1eu1_A           25 KTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGK   64 (155)
+T ss_dssp             EECCCCCCCEEEEEECCCCCCCCEEEEEECCCCCCCCEE
+T ss_pred             EEcccCCCceEEEEEcCCCCCCCEEEEEcCCCCCCCcEE
+
+
+>2iv2_X
+Probab=95.81  E-value=1.5e-08  Score=78.40  Aligned_cols=38  Identities=35%  Similarity=0.987  Sum_probs=36.2  Template_Neff=5.8
+
+Q test_structure    22 ITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGK   59 (75)
+Q Consensus        22 itlevepsdtienvkakiqdkegippdqqrlifagk   59 (75)
+                      ||||||||||||||||||||||||||||||||||
+T Consensus        28 itlevepsdtienvkakiqdkegippdqqrlifagk   65 (151)
+T 2iv2_X           28 ITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGK   65 (151)
+T ss_dssp             CCCCCCCEEEEEECCCCCCCCEEEEEECCCCCCCCEE
+T ss_pred             cccCCCceEEEEEcCCCCCCCEEEEEcCCCCCCCcEE
+
+
+>1kqf_A
+Probab=93.52  E-value=7.8e-07  Score=70.20  Aligned_cols=35  Identities=32%  Similarity=0.912  Sum_probs=33.5  Template_Neff=5.2
+
+Q test_structure    25 LEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGK   59 (75)
+Q Consensus        25 levepsdtienvkakiqdkegippdqqrlifagk   59 (75)
+                      |||||||||||||||||||||||||||||||
+T Consensus        30 levepsdtienvkakiqdkegippdqqrlifagk   64 (165)
+T 1kqf_A           30 LEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGK   64 (165)
+T ss_dssp             CCCCEEEEEECCCCCCCCEEEEEECCCCCCCCEE
+T ss_pred             cCCceEEEEEcCCCCCCCEEEEEcCCCCCCCcEE
+

@@ -31,15 +31,17 @@ class TestPDBProbability:
 
     def test_boundary_conditions(self):
         """Test values just above and below thresholds."""
-        # Just below threshold should use higher probability
-        assert get_PDB_prob(2.99) == 0.95
-        assert get_PDB_prob(5.99) == 0.95
-        assert get_PDB_prob(7.99) == 0.94
+        # Just below threshold should stay in same bin
+        assert get_PDB_prob(2.99) == 0.95  # <= 3
+        assert get_PDB_prob(3.0) == 0.95   # <= 3
+        assert get_PDB_prob(5.99) == 0.94  # <= 6 but > 3
+        assert get_PDB_prob(6.0) == 0.94   # <= 6
+        assert get_PDB_prob(7.99) == 0.88  # <= 8 but > 6
 
-        # Just above threshold should use lower probability
-        assert get_PDB_prob(3.01) == 0.94
-        assert get_PDB_prob(6.01) == 0.88
-        assert get_PDB_prob(8.01) == 0.84
+        # Just above threshold moves to next bin
+        assert get_PDB_prob(3.01) == 0.94  # <= 6 but > 3
+        assert get_PDB_prob(6.01) == 0.88  # <= 8 but > 6
+        assert get_PDB_prob(8.01) == 0.84  # <= 10 but > 8
 
     def test_extreme_values(self):
         """Test extreme distance values."""
@@ -75,10 +77,14 @@ class TestPAEProbability:
 
     def test_boundary_conditions(self):
         """Test values around thresholds."""
-        assert get_PAE_prob(0.99) == 0.97
-        assert get_PAE_prob(1.01) == 0.89
-        assert get_PAE_prob(4.99) == 0.78
-        assert get_PAE_prob(5.01) == 0.74
+        assert get_PAE_prob(0.99) == 0.97  # <= 1
+        assert get_PAE_prob(1.0) == 0.97   # <= 1
+        assert get_PAE_prob(1.01) == 0.89  # <= 2 but > 1
+        assert get_PAE_prob(3.99) == 0.78  # <= 4 but > 3
+        assert get_PAE_prob(4.0) == 0.78   # <= 4
+        assert get_PAE_prob(4.99) == 0.74  # <= 5 but > 4
+        assert get_PAE_prob(5.0) == 0.74   # <= 5
+        assert get_PAE_prob(5.01) == 0.7   # <= 6 but > 5
 
     def test_extreme_values(self):
         """Test extreme error values."""
@@ -294,5 +300,6 @@ class TestCombinedProbability:
 
         # Mixed (HHS/DALI high, PDB/PAE low)
         combined_mixed = (0.06 ** 0.1) * (0.11 ** 0.1) * (0.98 ** 0.4) * (0.98 ** 0.4)
-        # Should be high due to HHS/DALI dominance
-        assert combined_mixed > 0.9
+        # HHS/DALI weights (0.4 each) don't fully overcome very low PDB/PAE (0.06, 0.11)
+        # Result is ~0.596
+        assert 0.55 < combined_mixed < 0.65
