@@ -192,7 +192,7 @@ class DPAMPipeline:
         
         elif step == PipelineStep.ANALYZE_DALI:
             from dpam.steps.step08_analyze_dali import run_step8
-            return run_step8(prefix, self.working_dir, self.reference_data)
+            return run_step8(prefix, self.working_dir, self.reference_data, self.data_dir)
         
         elif step == PipelineStep.GET_SUPPORT:
             from dpam.steps.step09_get_support import run_step9
@@ -212,7 +212,7 @@ class DPAMPipeline:
         
         elif step == PipelineStep.PARSE_DOMAINS:
             from dpam.steps.step13_parse_domains import run_step13
-            return run_step13(prefix, self.working_dir, self.reference_data)
+            return run_step13(prefix, self.working_dir)
         
         else:
             logger.error(f"Unknown step: {step}")

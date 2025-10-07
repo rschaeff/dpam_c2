@@ -1,0 +1,1 @@
+"""DPAM test suite."""
