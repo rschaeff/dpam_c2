@@ -14,19 +14,60 @@ AF_ID="AF-${UNIPROT_ID}-F1"
 
 echo "Downloading test data for ${AF_ID}..."
 
+# Detect download tool (prefer curl over wget for better proxy support)
+if command -v curl &> /dev/null; then
+    DOWNLOAD_CMD="curl -f -L -o"
+    QUIET_FLAG="-s"
+elif command -v wget &> /dev/null; then
+    DOWNLOAD_CMD="wget -O"
+    QUIET_FLAG="-q"
+else
+    echo "Error: Neither curl nor wget found. Please install one of them."
+    exit 1
+fi
+
 # Download PDB
 echo "Downloading PDB..."
-wget -q "https://alphafold.ebi.ac.uk/files/${AF_ID}-model_v4.pdb" -O test_structure.pdb
+if command -v curl &> /dev/null; then
+    if ! curl -f -L -s --max-time 30 --connect-timeout 10 "https://alphafold.ebi.ac.uk/files/${AF_ID}-model_v4.pdb" -o test_structure.pdb; then
+        echo "Error: Failed to download PDB file. Check network/proxy settings."
+        echo "If behind a proxy, set: export http_proxy=http://your-proxy:port"
+        echo "Or download manually from: https://alphafold.ebi.ac.uk/entry/${AF_ID}"
+        exit 1
+    fi
+else
+    if ! wget -q --timeout=30 --tries=2 "https://alphafold.ebi.ac.uk/files/${AF_ID}-model_v4.pdb" -O test_structure.pdb; then
+        echo "Error: Failed to download PDB file. Check network/proxy settings."
+        echo "If behind a proxy, set: export http_proxy=http://your-proxy:port"
+        echo "Or download manually from: https://alphafold.ebi.ac.uk/entry/${AF_ID}"
+        exit 1
+    fi
+fi
 echo "✓ Downloaded test_structure.pdb"
 
 # Download CIF
 echo "Downloading CIF..."
-wget -q "https://alphafold.ebi.ac.uk/files/${AF_ID}-model_v4.cif" -O test_structure.cif 2>/dev/null || \
-  echo "⚠ CIF download failed (optional)"
+if command -v curl &> /dev/null; then
+    curl -f -L -s --max-time 30 --connect-timeout 10 "https://alphafold.ebi.ac.uk/files/${AF_ID}-model_v4.cif" -o test_structure.cif 2>/dev/null || \
+      echo "⚠ CIF download failed (optional)"
+else
+    wget -q --timeout=30 --tries=2 "https://alphafold.ebi.ac.uk/files/${AF_ID}-model_v4.cif" -O test_structure.cif 2>/dev/null || \
+      echo "⚠ CIF download failed (optional)"
+fi
 
 # Download PAE JSON
 echo "Downloading PAE matrix..."
-wget -q "https://alphafold.ebi.ac.uk/files/${AF_ID}-predicted_aligned_error_v4.json" -O test_structure.json
+if command -v curl &> /dev/null; then
+    if ! curl -f -L -s --max-time 30 --connect-timeout 10 "https://alphafold.ebi.ac.uk/files/${AF_ID}-predicted_aligned_error_v4.json" -o test_structure.json; then
+        echo "Error: Failed to download PAE JSON file."
+        exit 1
+    fi
+else
+    if ! wget -q --timeout=30 --tries=2 "https://alphafold.ebi.ac.uk/files/${AF_ID}-predicted_aligned_error_v4.json" -O test_structure.json; then
+        echo "Error: Failed to download PAE JSON file."
+        exit 1
+    fi
+fi
 echo "✓ Downloaded test_structure.json"
 
 # Create FASTA from PDB
