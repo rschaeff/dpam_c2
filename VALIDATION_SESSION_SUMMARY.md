@@ -64,7 +64,41 @@ Res 248-270: Only 2007.3 (5-10 hits)
 
 **Commit**: `706a8e3` - "Add consensus filtering to T-group assignments in Step 13"
 
-### 3. **Probability Matrix Default Handling (FIXED IN PREVIOUS SESSION)**
+### 3. **Strict T-group Enforcement (CRITICAL FIX #3)**
+
+**Problem**: Even with consensus filtering, B4S3C8 still merged into 1 domain because unassigned segments (failed consensus) were allowed to merge with anything, creating "bridges" between different T-groups.
+
+**Root Cause**: `segments_share_tgroup()` returned `True` when either segment had no T-group assignment, allowing:
+```
+192.7 → None → None → 314.1  (chain of merges through unassigned gap)
+```
+
+**Evidence from B4S3C8**:
+- Expected: D1 (1-90, T-group 192.7), D2 (91-340, T-group 314.1)
+- Massive overlap region (residues 65-97, ~33 residues)
+- Segments 15-16 (res 76-85): Both T-groups present but failed consensus
+  - Res 80: 192.7:10, 314.1:5 → ratio 2:1 (fails 3:1), fraction 67% (fails 75%)
+  - Res 85: 192.7:9, 314.1:8 → ratio 1.1:1 (fails 3:1), fraction 53% (fails 75%)
+- These unassigned segments allowed 192.7 and 314.1 domains to merge
+
+**Solution Implemented**:
+Modified `segments_share_tgroup()` to **require BOTH segments to have T-group assignments**:
+```python
+if dominant1 is None or dominant2 is None:
+    return False  # Cannot merge if either lacks clear T-group
+```
+
+**Impact**:
+- B4S3C8 now correctly segments into 2 domains (was 1)
+  - D1: 1-75, D2: 86-343 (boundaries slightly off due to excluded gap, but count correct)
+- Overall validation: **7/15 correct (46.7%)**, up from 6/15 (40.0%)
+- Q2W063 and all previous successes still work correctly
+
+**Key insight**: Boundary regions with unclear T-group consensus should NOT facilitate merging. The strict constraint prevents these regions from acting as bridges while preserving merging within well-defined domain cores.
+
+**Commit**: `43d1ac4` - "Enforce strict T-group constraint: require both segments to have assignments"
+
+### 4. **Probability Matrix Default Handling (FIXED IN PREVIOUS SESSION)**
 
 **Problem**: v2.0 wasn't filling in default HHS/DALI scores for all residue pairs.
 
@@ -74,7 +108,7 @@ Res 248-270: Only 2007.3 (5-10 hits)
 
 ## Validation Results
 
-### Current Performance (6/15 = 40.0% correct domain counts)
+### Current Performance (7/15 = 46.7% correct domain counts)
 
 **Correct Domain Counts**:
 1. ✅ **Q9JTA3**: 1 domain (v1.0=1, v2.0=1)
@@ -82,13 +116,13 @@ Res 248-270: Only 2007.3 (5-10 hits)
 3. ✅ **C1CK31**: 1 domain (v1.0=1, v2.0=1)
 4. ✅ **O33946**: 2 domains (v1.0=2, v2.0=2) ← **FIXED by T-group constraint!**
 5. ✅ **Q2W063**: 2 domains (v1.0=2, v2.0=2) ← **FIXED by consensus filtering!**
-6. ✅ **Q8CGU1**: 6 domains (v1.0=6, v2.0=6)
+6. ✅ **B4S3C8**: 2 domains (v1.0=2, v2.0=2) ← **FIXED by strict enforcement!**
+7. ✅ **Q8CGU1**: 6 domains (v1.0=6, v2.0=6)
 
 **Over-Segmentation** (1 protein):
 - **O66611**: v1.0=2, v2.0=3 (+1 domain)
 
-**Under-Segmentation** (8 proteins):
-- **B4S3C8**: v1.0=2, v2.0=1 (-1)
+**Under-Segmentation** (7 proteins):
 - **A5W9N6**: v1.0=3, v2.0=2 (-1)
 - **B0BU16**: v1.0=3, v2.0=2 (-1)
 - **Q5M1T8**: v1.0=4, v2.0=2 (-2)
@@ -140,6 +174,44 @@ Superb DALI hits: 128 total
 ```
 
 **Key insight**: Template alignment variation at boundaries is natural, but shouldn't allow inappropriate merging. Consensus filtering successfully distinguishes domain cores (strong consensus) from overlap regions (mixed assignments).
+
+### Case Study: B4S3C8 (Success Story #3)
+
+**Structure**: 343 residues, 2 domains
+- D1: 1-90 (T-group 192.7.1)
+- D2: 91-340 (T-group 314.1.1)
+
+**Before strict enforcement**:
+- Merged into 1 domain despite consensus filtering
+- Massive overlap region (residues 65-97, ~33 residues)
+- Segments 15-16 (res 76-85) failed consensus, had no T-group assignment
+- These unassigned segments allowed merging: 192.7 → None → None → 314.1
+
+**Template coverage pattern**:
+```
+Res 65-86:  192.7:10, 314.1:1-9   (192.7 dominates but both present)
+Res 76-85:  192.7:9-10, 314.1:5-8 (fails consensus: ratio < 3:1, fraction < 75%)
+Res 87-97:  192.7:6→1, 314.1:11→45 (314.1 takes over)
+Res 98+:    Only 314.1 (48-141 hits, massive coverage)
+```
+
+**After strict enforcement**:
+- Correctly produces 2 domains with boundary at residue 75/86
+- D1: 1-75, D2: 86-343
+- Unassigned gap (76-85) excluded from both domains
+- Boundaries slightly off from expected 90/91 due to excluded gap, but **domain count correct**
+
+**Template evidence**:
+```
+High-quality sequence hits: 24 total (heavily biased to D2)
+  314.1: 20 hits
+  192.7: 4 hits
+Superb DALI hits: 127 total (also biased to D2)
+  314.1: 121 hits
+  192.7: 6 hits
+```
+
+**Key insight**: Large overlap regions (30+ residues) with mixed T-group coverage represent genuine boundary ambiguity. Strict enforcement prevents these regions from facilitating inappropriate merging, even when one T-group dominates template coverage overall.
 
 ### Case Study: O66611 (Partial Success)
 
@@ -223,31 +295,45 @@ Current thresholds (prob >= 90 for sequence, "superb" for DALI) may be too stric
 
 ## Conclusion
 
-This session achieved **two major algorithmic improvements** to Step 13 domain parsing:
+This session achieved **three major algorithmic improvements** to Step 13 domain parsing:
 
 ### 1. T-group Constraint (Fix #1)
 Prevents inappropriate merging of spatially adjacent domains from different structural families. O33946 now correctly segments into 2 domains, demonstrating the fix works when domains have clearly different T-groups.
 
 ### 2. Consensus Filtering (Fix #2)
-Addresses the subtle "bridge" problem where template alignment variation creates overlap regions with mixed T-group assignments. Q2W063 now correctly segments into 2 domains with the exact expected boundary, demonstrating the fix handles real-world template data effectively.
+Addresses the "bridge" problem where template alignment variation creates small overlap regions (2-3 residues) with mixed T-group assignments. Q2W063 now correctly segments into 2 domains with the exact expected boundary.
+
+### 3. Strict Enforcement (Fix #3)
+Handles large overlap regions (30+ residues) by requiring BOTH segments to have clear T-group assignments before allowing merging. Prevents unassigned boundary regions from facilitating inappropriate merges. B4S3C8 now correctly segments into 2 domains.
 
 ### Key Achievements
-- **Validation accuracy**: 40.0% (6/15 correct domain counts), up from initial 33.3%
-- **Success cases**: Both fixes working together enable correct segmentation when:
+- **Validation accuracy**: **46.7% (7/15 correct domain counts)**, up from initial 33.3%
+- **Progressive improvement**: 33.3% → 40.0% → 46.7% through systematic fixes
+- **Success cases**: All three fixes working together enable correct segmentation when:
   - High-quality template data exists
-  - Domain boundaries have clear T-group transitions
-  - Template coverage is sufficient for consensus
+  - Domain boundaries have T-group transitions (even with overlap)
+  - Sufficient template coverage for consensus determination
+
+### Three Complementary Mechanisms
+1. **Basic constraint**: Segments must share dominant T-group to merge
+2. **Consensus filter**: Residues need ≥3:1 ratio or ≥75% fraction for T-group assignment
+3. **Strict enforcement**: Unassigned segments (failed consensus) cannot merge via T-group matching
 
 ### Remaining Challenges
-- **Under-segmentation** persists in 8 proteins with 3+ domains
+- **Under-segmentation** persists in 7 proteins with 3+ domains
 - **Over-segmentation** in O66611 (3 domains vs expected 2)
 - Complex multi-domain proteins likely require:
-  - More sophisticated boundary detection
   - ML pipeline (steps 15-24) for ECOD-based refinement
-  - Integration of secondary structure analysis
+  - Integration of secondary structure analysis for boundary refinement
+  - Possibly lower consensus thresholds for proteins with sparse template coverage
 
 ### Algorithm Status
-Step 13 now implements robust T-group-aware segmentation with consensus filtering. The algorithm correctly partitions domains when template evidence is clear, fulfilling the goal: **"the first [half of the pipeline] should partition correctly."**
+Step 13 now implements robust T-group-aware segmentation with consensus filtering and strict enforcement. The algorithm correctly partitions domains when high-quality template evidence exists, fulfilling the goal: **"the first [half of the pipeline] should partition correctly."**
+
+The three-tier approach successfully handles:
+- **Clean boundaries** (different T-groups, no overlap) → Basic constraint
+- **Small overlaps** (2-3 residues) → Consensus filtering
+- **Large overlaps** (30+ residues) → Strict enforcement
 
 ---
 
@@ -255,3 +341,4 @@ Step 13 now implements robust T-group-aware segmentation with consensus filterin
 **Commits**:
 - `831d2cf` - Add T-group-aware segmentation to Step 13
 - `706a8e3` - Add consensus filtering to T-group assignments in Step 13
+- `43d1ac4` - Enforce strict T-group constraint: require both segments to have assignments
