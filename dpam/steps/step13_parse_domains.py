@@ -293,13 +293,14 @@ def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], Lis
         hhs_scores: Dict mapping (res1, res2) -> list of HHsearch probs
         dali_scores: Dict mapping (res1, res2) -> list of DALI z-scores
         res_tgroups: Dict mapping residue -> set of T-groups (e.g., {'192.10', '377.1'})
+                     ONLY includes residues with strong consensus (see apply_consensus_filter)
     """
     hhs_scores = {}
     dali_scores = {}
-    res_tgroups = {}
+    res_tgroup_counts = {}  # Temporary: track counts per residue
 
     if not gooddomains_file.exists():
-        return hhs_scores, dali_scores, res_tgroups
+        return hhs_scores, dali_scores, {}
 
     with open(gooddomains_file, 'r') as f:
         for line in f:
@@ -312,13 +313,13 @@ def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], Lis
                 range_str = words[8]
                 resids = list(range_to_residues(range_str))
 
-                # Track T-group assignments ONLY for high-quality hits (prob >= 90)
+                # Track T-group hit counts ONLY for high-quality hits (prob >= 90)
                 # This prevents contamination from weak/promiscuous alignments
                 if prob >= 90.0:
                     for res in resids:
-                        if res not in res_tgroups:
-                            res_tgroups[res] = set()
-                        res_tgroups[res].add(tgroup)
+                        if res not in res_tgroup_counts:
+                            res_tgroup_counts[res] = {}
+                        res_tgroup_counts[res][tgroup] = res_tgroup_counts[res].get(tgroup, 0) + 1
 
                 # Add HHsearch scores for all pairs
                 for i, res1 in enumerate(resids):
@@ -337,13 +338,13 @@ def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], Lis
                 range_str = words[14]
                 resids = list(range_to_residues(range_str))
 
-                # Track T-group assignments ONLY for "superb" quality DALI hits
+                # Track T-group hit counts ONLY for "superb" quality DALI hits
                 # This prevents contamination from weak/promiscuous structural matches
                 if quality == 'superb':
                     for res in resids:
-                        if res not in res_tgroups:
-                            res_tgroups[res] = set()
-                        res_tgroups[res].add(tgroup)
+                        if res not in res_tgroup_counts:
+                            res_tgroup_counts[res] = {}
+                        res_tgroup_counts[res][tgroup] = res_tgroup_counts[res].get(tgroup, 0) + 1
 
                 # Add DALI scores for all pairs
                 for i, res1 in enumerate(resids):
@@ -362,7 +363,65 @@ def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], Lis
                                 hhs_scores[key] = []
                             hhs_scores[key].append(bestprob)
 
+    # Apply consensus filter to T-group assignments
+    res_tgroups = apply_consensus_filter(res_tgroup_counts)
+
     return hhs_scores, dali_scores, res_tgroups
+
+
+def apply_consensus_filter(res_tgroup_counts: Dict[int, Dict[str, int]],
+                           min_ratio: float = 3.0,
+                           min_fraction: float = 0.75) -> Dict[int, Set[str]]:
+    """
+    Apply consensus filtering to T-group assignments.
+
+    Only assign a T-group to a residue if it has strong consensus:
+    - The dominant T-group has >= min_ratio times more hits than any other T-group (e.g., 3:1)
+    - OR the dominant T-group accounts for >= min_fraction of all hits (e.g., 75%)
+
+    This prevents overlap regions with mixed T-group assignments from creating
+    bridges that allow inappropriate merging.
+
+    Args:
+        res_tgroup_counts: Dict mapping residue -> {tgroup: hit_count}
+        min_ratio: Minimum ratio of dominant to second-most-common T-group
+        min_fraction: Minimum fraction of hits for dominant T-group
+
+    Returns:
+        Dict mapping residue -> set of T-groups (usually size 1 or 0)
+    """
+    res_tgroups = {}
+
+    for res, tgroup_counts in res_tgroup_counts.items():
+        if not tgroup_counts:
+            continue
+
+        # Sort T-groups by hit count
+        sorted_tgroups = sorted(tgroup_counts.items(), key=lambda x: x[1], reverse=True)
+        dominant_tgroup, dominant_count = sorted_tgroups[0]
+        total_hits = sum(tgroup_counts.values())
+
+        # Check consensus criteria
+        has_strong_consensus = False
+
+        # Criterion 1: High fraction of total hits
+        if dominant_count / total_hits >= min_fraction:
+            has_strong_consensus = True
+
+        # Criterion 2: Large ratio to second-most-common T-group
+        elif len(sorted_tgroups) > 1:
+            second_count = sorted_tgroups[1][1]
+            if dominant_count >= min_ratio * second_count:
+                has_strong_consensus = True
+        else:
+            # Only one T-group - automatic consensus
+            has_strong_consensus = True
+
+        # Assign only if strong consensus
+        if has_strong_consensus:
+            res_tgroups[res] = {dominant_tgroup}
+
+    return res_tgroups
 
 
 def aggregate_hhs_score(scores: List[float]) -> float:
