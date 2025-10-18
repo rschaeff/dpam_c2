@@ -591,18 +591,23 @@ def segments_share_tgroup(seg1: List[int], seg2: List[int], res_tgroups: Dict[in
     Check if two segments have compatible T-group assignments.
 
     CRITICAL (v1.0 behavior): Segments can only merge if they share the same DOMINANT T-group.
-    This prevents merging across domain boundaries while allowing merging within overlap regions.
+    This prevents merging across domain boundaries.
+
+    STRICT CONSTRAINT: If either segment lacks a clear T-group assignment (failed consensus
+    filtering), do NOT allow T-group-based merging. This prevents unassigned boundary regions
+    from acting as "bridges" between different T-groups.
     """
     # Get dominant T-group for each segment
     dominant1 = get_dominant_tgroup(seg1, res_tgroups)
     dominant2 = get_dominant_tgroup(seg2, res_tgroups)
 
-    # If either segment has no T-group assignments, allow merging
-    # (unassigned residues can merge with anything)
+    # STRICT: Require BOTH segments to have T-group assignments
+    # If either lacks assignment, they cannot merge based on T-group matching
+    # (These are likely boundary regions with mixed coverage)
     if dominant1 is None or dominant2 is None:
-        return True
+        return False
 
-    # Otherwise, require same dominant T-group
+    # Both have T-groups: require them to match
     return dominant1 == dominant2
 
 
