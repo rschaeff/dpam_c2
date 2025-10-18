@@ -284,29 +284,41 @@ def calculate_distance(coords1: List[Tuple[float, float, float]],
 
 
 def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], List[float]],
-                                                        Dict[Tuple[int, int], List[float]]]:
+                                                        Dict[Tuple[int, int], List[float]],
+                                                        Dict[int, Set[str]]]:
     """
-    Load HHsearch and DALI scores from good domains.
+    Load HHsearch and DALI scores from good domains, plus T-group assignments.
 
     Returns:
         hhs_scores: Dict mapping (res1, res2) -> list of HHsearch probs
         dali_scores: Dict mapping (res1, res2) -> list of DALI z-scores
+        res_tgroups: Dict mapping residue -> set of T-groups (e.g., {'192.10', '377.1'})
     """
     hhs_scores = {}
     dali_scores = {}
+    res_tgroups = {}
 
     if not gooddomains_file.exists():
-        return hhs_scores, dali_scores
+        return hhs_scores, dali_scores, res_tgroups
 
     with open(gooddomains_file, 'r') as f:
         for line in f:
             words = line.split()
 
             if words[0] == 'sequence':
-                # Sequence hit: prob in column 5, range in column 8
+                # Sequence hit: tgroup in column 4, prob in column 5, range in column 8
+                tgroup = words[4]
                 prob = float(words[5])
                 range_str = words[8]
                 resids = list(range_to_residues(range_str))
+
+                # Track T-group assignments ONLY for high-quality hits (prob >= 90)
+                # This prevents contamination from weak/promiscuous alignments
+                if prob >= 90.0:
+                    for res in resids:
+                        if res not in res_tgroups:
+                            res_tgroups[res] = set()
+                        res_tgroups[res].add(tgroup)
 
                 # Add HHsearch scores for all pairs
                 for i, res1 in enumerate(resids):
@@ -317,11 +329,21 @@ def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], Lis
                         hhs_scores[key].append(prob)
 
             elif words[0] == 'structure':
-                # Structure hit: zscore in column 7, bestprob in column 12, range in column 14
+                # Structure hit: quality in column 1, tgroup in column 6, zscore in column 7, bestprob in column 12, range in column 14
+                quality = words[1]
+                tgroup = words[6]
                 zscore = float(words[7])
                 bestprob = float(words[12])
                 range_str = words[14]
                 resids = list(range_to_residues(range_str))
+
+                # Track T-group assignments ONLY for "superb" quality DALI hits
+                # This prevents contamination from weak/promiscuous structural matches
+                if quality == 'superb':
+                    for res in resids:
+                        if res not in res_tgroups:
+                            res_tgroups[res] = set()
+                        res_tgroups[res].add(tgroup)
 
                 # Add DALI scores for all pairs
                 for i, res1 in enumerate(resids):
@@ -340,7 +362,7 @@ def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], Lis
                                 hhs_scores[key] = []
                             hhs_scores[key].append(bestprob)
 
-    return hhs_scores, dali_scores
+    return hhs_scores, dali_scores, res_tgroups
 
 
 def aggregate_hhs_score(scores: List[float]) -> float:
@@ -392,39 +414,57 @@ def calculate_probability_matrix(
     Calculate combined probability matrix.
 
     Combined: dist^0.1 * pae^0.1 * hhs^0.4 * dali^0.4
-    """
-    prob_matrix = {}
 
+    CRITICAL (matches v1.0):
+    1. Aggregate HHS/DALI scores from goodDomains
+    2. Fill in DEFAULT values (HHS=20, DALI=1) for ALL residue pairs
+    3. Calculate probability ONLY for pairs where PDB distance and PAE exist
+
+    This ensures the check for "all four sources exist" always passes for HHS/DALI,
+    making the real constraint just PDB distance + PAE availability.
+    """
+    # Step 1: Aggregate scores for pairs that have data
+    aggregated_hhs = {}
+    for key, scores in hhs_scores.items():
+        aggregated_hhs[key] = aggregate_hhs_score(scores)
+
+    aggregated_dali = {}
+    for key, scores in dali_scores.items():
+        aggregated_dali[key] = aggregate_dali_score(scores)
+
+    # Step 2: Fill in DEFAULT values for ALL pairs (v1.0 lines 366-401)
+    # This is the CRITICAL difference - v1.0 ensures HHS and DALI exist for ALL pairs
     for res1 in range(1, length + 1):
         for res2 in range(res1 + 1, length + 1):
-            # Calculate distance probability
-            if res1 in res2coords and res2 in res2coords:
-                dist = calculate_distance(res2coords[res1], res2coords[res2])
-                dist_prob = get_PDB_prob(dist)
-            else:
-                dist_prob = 0.06  # Default for missing coords
-
-            # Calculate PAE probability
-            if res1 in rpair2error and res2 in rpair2error[res1]:
-                error = rpair2error[res1][res2]
-                pae_prob = get_PAE_prob(error)
-            else:
-                pae_prob = 0.11  # Default for missing PAE
-
-            # Calculate HHsearch probability
             key = (res1, res2)
-            if key in hhs_scores:
-                hhs_score = aggregate_hhs_score(hhs_scores[key])
-            else:
-                hhs_score = 20.0  # Default
-            hhs_prob = get_HHS_prob(hhs_score)
+            if key not in aggregated_hhs:
+                aggregated_hhs[key] = 20.0  # Default HHS score
+            if key not in aggregated_dali:
+                aggregated_dali[key] = 1.0   # Default DALI score
 
-            # Calculate DALI probability
-            if key in dali_scores:
-                dali_score = aggregate_dali_score(dali_scores[key])
-            else:
-                dali_score = 1.0  # Default
-            dali_prob = get_DALI_prob(dali_score)
+    # Step 3: Calculate probabilities for pairs where PDB distance and PAE exist
+    prob_matrix = {}
+    for res1 in range(1, length + 1):
+        for res2 in range(res1 + 1, length + 1):
+            # v1.0: HHS and DALI now ALWAYS exist (filled with defaults above)
+            # Real check is only: does PDB distance and PAE exist?
+            has_dist = (res1 in res2coords and res2 in res2coords)
+            has_pae = (res1 in rpair2error and res2 in rpair2error[res1])
+
+            if not (has_dist and has_pae):
+                continue  # Skip if no structural data
+
+            # Calculate probability with guaranteed HHS/DALI values
+            key = (res1, res2)
+
+            dist = calculate_distance(res2coords[res1], res2coords[res2])
+            dist_prob = get_PDB_prob(dist)
+
+            error = rpair2error[res1][res2]
+            pae_prob = get_PAE_prob(error)
+
+            hhs_prob = get_HHS_prob(aggregated_hhs[key])
+            dali_prob = get_DALI_prob(aggregated_dali[key])
 
             # Combined probability
             combined = (dist_prob ** 0.1) * (pae_prob ** 0.1) * (hhs_prob ** 0.4) * (dali_prob ** 0.4)
@@ -434,11 +474,17 @@ def calculate_probability_matrix(
 
 
 def get_prob(prob_matrix: Dict[Tuple[int, int], float], res1: int, res2: int) -> float:
-    """Get probability for residue pair (handles ordering)."""
+    """
+    Get probability for residue pair (handles ordering).
+
+    CRITICAL (matches v1.0): Return 0.0 for missing pairs instead of default 0.5.
+    v1.0 directly accesses rpair2prob dict (would KeyError if missing).
+    Missing pairs should NOT contribute to domain merging.
+    """
     if res1 == res2:
         return 1.0
     key = (min(res1, res2), max(res1, res2))
-    return prob_matrix.get(key, 0.5)
+    return prob_matrix.get(key, 0.0)  # 0.0 prevents merging when data missing
 
 
 def initial_segmentation(length: int, diso_resids: Set[int]) -> List[List[int]]:
@@ -461,6 +507,46 @@ def initial_segmentation(length: int, diso_resids: Set[int]) -> List[List[int]]:
     return segments
 
 
+def get_dominant_tgroup(segment: List[int], res_tgroups: Dict[int, Set[str]]) -> str:
+    """
+    Get the dominant T-group for a segment.
+
+    The dominant T-group is the one that appears in the most residues.
+    Returns None if no T-group assignments exist.
+    """
+    tgroup_counts = {}
+    for res in segment:
+        if res in res_tgroups:
+            for tgroup in res_tgroups[res]:
+                tgroup_counts[tgroup] = tgroup_counts.get(tgroup, 0) + 1
+
+    if not tgroup_counts:
+        return None
+
+    # Return the most common T-group
+    return max(tgroup_counts.items(), key=lambda x: x[1])[0]
+
+
+def segments_share_tgroup(seg1: List[int], seg2: List[int], res_tgroups: Dict[int, Set[str]]) -> bool:
+    """
+    Check if two segments have compatible T-group assignments.
+
+    CRITICAL (v1.0 behavior): Segments can only merge if they share the same DOMINANT T-group.
+    This prevents merging across domain boundaries while allowing merging within overlap regions.
+    """
+    # Get dominant T-group for each segment
+    dominant1 = get_dominant_tgroup(seg1, res_tgroups)
+    dominant2 = get_dominant_tgroup(seg2, res_tgroups)
+
+    # If either segment has no T-group assignments, allow merging
+    # (unassigned residues can merge with anything)
+    if dominant1 is None or dominant2 is None:
+        return True
+
+    # Otherwise, require same dominant T-group
+    return dominant1 == dominant2
+
+
 def calculate_segment_pair_prob(seg1: List[int], seg2: List[int],
                                 prob_matrix: Dict[Tuple[int, int], float]) -> float:
     """Calculate mean probability between two segments."""
@@ -476,9 +562,13 @@ def calculate_segment_pair_prob(seg1: List[int], seg2: List[int],
 
 
 def merge_segments_by_probability(segments: List[List[int]],
-                                  prob_matrix: Dict[Tuple[int, int], float]) -> List[List[int]]:
+                                  prob_matrix: Dict[Tuple[int, int], float],
+                                  res_tgroups: Dict[int, Set[str]]) -> List[List[int]]:
     """
-    Merge segments with mean probability > 0.54.
+    Merge segments with mean probability > 0.54 AND shared T-group.
+
+    CRITICAL (v1.0 behavior): Only merge segments that share at least one T-group.
+    This prevents merging across domain boundaries.
 
     Returns merged segments.
     """
@@ -500,8 +590,11 @@ def merge_segments_by_probability(segments: List[List[int]],
                 if j in used:
                     continue
 
+                # Check both probability AND T-group compatibility
                 prob = calculate_segment_pair_prob(cluster, seg2, prob_matrix)
-                if prob > 0.54:
+                shares_tgroup = segments_share_tgroup(cluster, seg2, res_tgroups)
+
+                if prob > 0.54 and shares_tgroup:
                     cluster.extend(seg2)
                     used.add(j)
                     changed = True
@@ -528,11 +621,16 @@ def calculate_intra_prob(segment: List[int], prob_matrix: Dict[Tuple[int, int], 
 
 
 def iterative_clustering(segments: List[List[int]],
-                        prob_matrix: Dict[Tuple[int, int], float]) -> List[List[int]]:
+                        prob_matrix: Dict[Tuple[int, int], float],
+                        res_tgroups: Dict[int, Set[str]]) -> List[List[int]]:
     """
-    Iteratively merge segments based on intra vs inter probability.
+    Iteratively merge segments based on intra vs inter probability AND T-group compatibility.
 
-    Merge if: inter_prob * 1.07 >= min(intra1, intra2)
+    CRITICAL (v1.0 behavior): Only merge if:
+    1. inter_prob * 1.07 >= min(intra1, intra2)
+    2. Segments share at least one T-group
+
+    This prevents merging across domain boundaries.
     """
     clusters = [seg[:] for seg in segments]
 
@@ -549,6 +647,10 @@ def iterative_clustering(segments: List[List[int]],
 
         for i in range(len(clusters)):
             for j in range(i + 1, len(clusters)):
+                # Check T-group compatibility first
+                if not segments_share_tgroup(clusters[i], clusters[j], res_tgroups):
+                    continue
+
                 inter_prob = calculate_segment_pair_prob(clusters[i], clusters[j], prob_matrix)
                 min_intra = min(intra_probs[i], intra_probs[j])
 
@@ -678,10 +780,11 @@ def run_step13(prefix: str, working_dir: Path) -> bool:
     logger.info("Loading PAE matrix")
     rpair2error = load_pae_matrix(json_file)
 
-    # Load good domains scores
-    logger.info("Loading good domain scores")
-    hhs_scores, dali_scores = load_good_domains(gooddomains_file)
+    # Load good domains scores and T-group assignments
+    logger.info("Loading good domain scores and T-group assignments")
+    hhs_scores, dali_scores, res_tgroups = load_good_domains(gooddomains_file)
     logger.info(f"HHsearch pairs: {len(hhs_scores)}, DALI pairs: {len(dali_scores)}")
+    logger.info(f"Residues with T-group assignments: {len(res_tgroups)}")
 
     # Calculate probability matrix
     logger.info("Calculating probability matrix")
@@ -695,14 +798,14 @@ def run_step13(prefix: str, working_dir: Path) -> bool:
     segments = initial_segmentation(length, diso_resids)
     logger.info(f"Initial segments: {len(segments)}")
 
-    # Merge by probability
-    logger.info("Merging segments by probability (threshold > 0.54)")
-    merged = merge_segments_by_probability(segments, prob_matrix)
+    # Merge by probability AND T-group compatibility
+    logger.info("Merging segments by probability (threshold > 0.54) and T-group compatibility")
+    merged = merge_segments_by_probability(segments, prob_matrix, res_tgroups)
     logger.info(f"Merged to {len(merged)} segments")
 
-    # Iterative clustering
-    logger.info("Iterative clustering (intra/inter threshold 1.07)")
-    clusters = iterative_clustering(merged, prob_matrix)
+    # Iterative clustering with T-group constraints
+    logger.info("Iterative clustering (intra/inter threshold 1.07) with T-group constraints")
+    clusters = iterative_clustering(merged, prob_matrix, res_tgroups)
     logger.info(f"Clustered to {len(clusters)} domains")
 
     # Domain refinement v0: filter by length
@@ -721,14 +824,23 @@ def run_step13(prefix: str, working_dir: Path) -> bool:
     final_domains = filter_by_length(domains_v2, min_length=20)
     logger.info(f"Final domains: {len(final_domains)}")
 
-    # Write output
+    # Write output (two filenames for compatibility)
     output_file = working_dir / f'{prefix}.finalDPAM.domains'
+    step13_file = working_dir / f'{prefix}.step13_domains'
     logger.info(f"Writing final domains to {output_file}")
 
+    domain_lines = []
+    for i, domain in enumerate(final_domains, 1):
+        range_str = residues_to_range(sorted(domain))
+        domain_lines.append(f"D{i}\t{range_str}\n")
+
+    # Write .finalDPAM.domains (main output)
     with open(output_file, 'w') as f:
-        for i, domain in enumerate(final_domains, 1):
-            range_str = residues_to_range(sorted(domain))
-            f.write(f"D{i}\t{range_str}\n")
+        f.writelines(domain_lines)
+
+    # Write .step13_domains (for ML pipeline compatibility)
+    with open(step13_file, 'w') as f:
+        f.writelines(domain_lines)
 
     logger.info(f"Step 13 complete: {len(final_domains)} domains parsed")
 
