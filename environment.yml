@@ -1,0 +1,22 @@
+name: dpam
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy>=1.20.0
+  - tensorflow>=2.13.0
+  - gemmi>=0.6.0
+  - foldseek
+  # Note: HHsuite often needs manual installation or cluster modules
+  # Uncomment if available in your conda channel:
+  # - hhsuite
+  - pip
+  - pip:
+    - pytest>=6.0.0
+    - pytest-cov>=2.0.0
+    - pytest-mock>=3.0.0
+    - black>=21.0
+    - mypy>=0.900
+    - flake8>=3.9.0

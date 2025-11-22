@@ -22,28 +22,117 @@ DPAM identifies structural domains through a 13-step pipeline that integrates:
 
 ## Installation
 
-### Prerequisites
+**📖 For detailed setup instructions, see [INSTALLATION.md](docs/INSTALLATION.md)**
 
-External tools (must be in PATH):
+### Quick Start (Recommended)
+
 ```bash
-# HHsuite (hhblits, hhmake, hhsearch, addss.pl)
-# Foldseek
-# DALI (dali.pl)
-# DSSP (mkdssp)
+# 1. Create conda environment
+conda env create -f environment.yml
+
+# 2. Activate environment
+conda activate dpam
+
+# 3. Install DPAM in editable mode
+pip install -e .
+
+# 4. Verify installation
+dpam --help
 ```
 
-### Install DPAM
+### Prerequisites
+
+**Required Software:**
+- Conda or Miniconda
+- Python 3.11+
+- Git
+
+**External Tools (must be in PATH):**
+- **HHsuite** (hhblits, hhmake, hhsearch, addss.pl)
+- **Foldseek** (included in conda env)
+- **DALI** (dali.pl from DaliLite.v5)
+- **DSSP** (mkdssp or dsspcmbi)
+
+### Detailed Setup
+
+#### 1. Create Conda Environment
 
 ```bash
 # Clone repository
 git clone https://github.com/your-org/dpam.git
 cd dpam
 
-# Install package
+# Create environment from file
+conda env create -f environment.yml
+```
+
+#### 2. Configure External Tools
+
+**On HGD cluster (leda):**
+```bash
+# Add HHsuite to PATH (add to ~/.bashrc for persistence)
+export PATH="/sw/apps/hh-suite/bin:$PATH"
+
+# Or use module system if available
+module load hhsuite
+```
+
+**On other systems:**
+```bash
+# Install HHsuite (if not in conda)
+conda install -c bioconda hhsuite
+
+# Or download from: https://github.com/soedinglab/hh-suite
+```
+
+**DALI setup:**
+```bash
+# Install DaliLite.v5
+# Download from: http://ekhidna2.biocenter.helsinki.fi/dali/
+# Extract to ~/src/Dali_v5/DaliLite.v5/
+
+# Set DALI_HOME (optional, auto-detected)
+export DALI_HOME=~/src/Dali_v5/DaliLite.v5
+```
+
+#### 3. Activate and Install
+
+```bash
+# Activate environment
+conda activate dpam
+
+# Install DPAM package
+pip install -e .
+
+# Verify installation
+dpam --help
+which dpam  # Should show: /path/to/conda/envs/dpam/bin/dpam
+```
+
+#### 4. Verify External Tools
+
+```bash
+# Check all tools are available
+which hhblits   # HHsuite
+which foldseek  # Foldseek
+which dali.pl   # DALI
+which mkdssp    # DSSP (or dsspcmbi)
+
+# If any are missing, see "Configure External Tools" above
+```
+
+### Manual Installation (Advanced)
+
+If you don't want to use conda:
+
+```bash
+# Install package only
 pip install -e . --break-system-packages
 
 # Or with development dependencies
 pip install -e ".[dev]" --break-system-packages
+
+# Note: You must manually install all external tools and ensure they're in PATH
 ```
 
 ## Quick Start
@@ -258,6 +347,37 @@ flake8 dpam/
 ### Adding New Steps
 
 See `IMPLEMENTATION_GUIDE.md` for detailed patterns and examples.
+
+## Cleanup and Maintenance
+
+### Removing Intermediate Files
+
+DPAM generates many intermediate files during processing. Use `dpam-clean` to safely remove files that can be regenerated:
+
+```bash
+# Preview what would be deleted (recommended first)
+dpam-clean work/ --dry-run
+
+# Actually delete intermediate files
+dpam-clean work/
+
+# Also remove checkpoint files (WARNING: requires full re-run)
+dpam-clean work/ --remove-checkpoints
+```
+
+**Files that are PRESERVED:**
+- Input structures (*.cif, *.pdb)
+- PAE matrices (*.json)
+- Sequences (*.fa)
+- Step outputs needed by later steps (map2ecod.result, goodDomains, etc.)
+- Final domain definitions (finalDPAM.domains)
+- Checkpoint files (unless --remove-checkpoints)
+
+**Files that are REMOVED:**
+- HHblits MSA files (*.a3m)
+- HMM profiles (*.hmm)
+- Log files (*.log)
+- Temporary DALI directories
 
 ## Troubleshooting
 

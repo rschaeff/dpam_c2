@@ -37,6 +37,7 @@ setup(
     entry_points={
         'console_scripts': [
             'dpam=dpam.cli.main:main',
+            'dpam-clean=dpam.cli.clean:main',
         ],
     },
     classifiers=[
