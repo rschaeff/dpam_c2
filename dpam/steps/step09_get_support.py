@@ -2,8 +2,11 @@
 Step 9: Get Sequence and Structure Support
 
 Integrates sequence (HHsearch) and structure (DALI) evidence:
-1. Process sequence hits: filter by coverage and probability, remove overlaps
+1. Process sequence hits: remove redundant overlaps (≥50% new residues)
 2. Process structure hits: calculate sequence support for each DALI hit
+
+Note: Matches original DPAM behavior - NO probability/coverage filtering.
+All hits passed to DOMASS ML model which decides evidence strength.
 
 Input:
     {prefix}.map2ecod.result - HHsearch mappings from step 5
@@ -146,8 +149,8 @@ def process_sequence_hits(
 
     For each ECOD domain:
     - Sort hits by probability (descending)
-    - Filter by coverage >= 0.4 and probability >= 50
-    - Keep hits with >= 50% new residues
+    - Keep hits with >= 50% new residues (remove redundancy)
+    - NO probability/coverage filter (matches original DPAM)
 
     Args:
         hits: List of sequence hits
@@ -201,29 +204,29 @@ def process_sequence_hits(
             template_resids_set = set(hit.template_resids)
             coverage = len(template_resids_set) / hit.ecod_len
 
-            # Filter by coverage and probability
-            if coverage >= 0.4 and hit.probability >= 50:
-                # Check for new residues (at least 50% new)
-                new_resids = template_resids_set.difference(covered_resids)
+            # Match original DPAM: Keep ALL hits (no probability/coverage filter)
+            # Only check for redundancy (50% new residues)
+            # DOMASS ML model will decide if evidence is strong enough
+            new_resids = template_resids_set.difference(covered_resids)
 
-                if len(new_resids) >= len(template_resids_set) * 0.5:
-                    hit_count += 1
-                    covered_resids = covered_resids.union(template_resids_set)
+            if len(new_resids) >= len(template_resids_set) * 0.5:
+                hit_count += 1
+                covered_resids = covered_resids.union(template_resids_set)
 
-                    # Add to filtered hits
-                    query_range = get_range(hit.query_resids)
-                    template_range = get_range(hit.template_resids)
+                # Add to filtered hits
+                query_range = get_range(hit.query_resids)
+                template_range = get_range(hit.template_resids)
 
-                    filtered_hits.append({
-                        'hitname': f'{ecod_num}_{hit_count}',
-                        'ecod_id': ecod_id,
-                        'family': family,
-                        'probability': hit.probability,
-                        'coverage': round(coverage, 2),
-                        'ecod_len': hit.ecod_len,
-                        'query_range': query_range,
-                        'template_range': template_range
-                    })
+                filtered_hits.append({
+                    'hitname': f'{ecod_num}_{hit_count}',
+                    'ecod_id': ecod_id,
+                    'family': family,
+                    'probability': hit.probability,
+                    'coverage': round(coverage, 2),
+                    'ecod_len': hit.ecod_len,
+                    'query_range': query_range,
+                    'template_range': template_range
+                })
 
     return filtered_hits, fam2hits
 

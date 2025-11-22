@@ -178,10 +178,15 @@ class TestStep09GetSupport:
             except ValueError:
                 pytest.fail("Best cov should be a valid float")
 
-    def test_sequence_filters_by_coverage(self, test_prefix, working_dir,
-                                          mock_reference_data):
-        """Test that sequence hits are filtered by coverage >= 0.4."""
-        # Create map2ecod with low coverage hit
+    def test_sequence_keeps_low_coverage_hits(self, test_prefix, working_dir,
+                                              mock_reference_data):
+        """
+        Regression test: Verify low-coverage hits are KEPT (matches original DPAM).
+
+        Bug: Step 9 was filtering out hits with coverage < 0.4, but original DPAM
+        keeps ALL hits. This caused 65-90% of proteins to lose HHsearch evidence.
+        """
+        # Create map2ecod with low coverage hit (coverage=0.30)
         map_file = working_dir / f"{test_prefix}.map2ecod.result"
         content = """uid\tecod_domain_id\thh_prob\thh_eval\thh_score\taligned_cols\tidents\tsimilarities\tsum_probs\tcoverage\tungapped_coverage\tquery_range\ttemplate_range\ttemplate_seqid_range
 000000003\te2rspA1\t99.0\t1e-10\t100.0\t50\t45%\t1.0\t45.0\t0.70\t0.75\t10-59\t1-50\t1-50
@@ -197,21 +202,29 @@ class TestStep09GetSupport:
         with open(seq_output, 'r') as f:
             lines = f.readlines()
 
+        # Should have 2 hits (both kept, including low coverage one)
+        assert len(lines) == 2, f"Should keep both hits including low-coverage one (got {len(lines)})"
+
         # Parse coverages
         coverages = [float(line.split('\t')[4]) for line in lines]
 
-        # All kept hits should have coverage >= 0.4
-        for cov in coverages:
-            assert cov >= 0.4, f"Coverage {cov} should be >= 0.4"
+        # Should include the low coverage hit (0.30)
+        assert any(cov < 0.4 for cov in coverages), \
+            "Should KEEP low-coverage hit (bug: was filtering coverage < 0.4)"
 
-    def test_sequence_filters_by_probability(self, test_prefix, working_dir,
-                                             mock_reference_data):
-        """Test that sequence hits are filtered by probability >= 50."""
-        # Create map2ecod with low probability hit
+    def test_sequence_keeps_low_probability_hits(self, test_prefix, working_dir,
+                                                  mock_reference_data):
+        """
+        Regression test: Verify low-probability hits are KEPT (matches original DPAM).
+
+        Bug: Step 9 was filtering out hits with probability < 50, but original DPAM
+        passes ALL hits to DOMASS. Example: A0A0B5J9J9 had prob=17.66 filtered out.
+        """
+        # Create map2ecod with low probability hit (prob=17.66, like A0A0B5J9J9)
         map_file = working_dir / f"{test_prefix}.map2ecod.result"
         content = """uid\tecod_domain_id\thh_prob\thh_eval\thh_score\taligned_cols\tidents\tsimilarities\tsum_probs\tcoverage\tungapped_coverage\tquery_range\ttemplate_range\ttemplate_seqid_range
 000000003\te2rspA1\t99.0\t1e-10\t100.0\t50\t45%\t1.0\t45.0\t0.70\t0.75\t10-59\t1-50\t1-50
-000000017\te2pmaA1\t45.0\t1e-05\t80.0\t45\t40%\t0.9\t40.0\t0.50\t0.55\t10-54\t1-45\t1-45
+000000017\te2pmaA1\t17.66\t1e-02\t50.0\t45\t30%\t0.5\t20.0\t0.90\t0.95\t10-54\t1-45\t1-45
 """
         map_file.write_text(content)
 
@@ -223,12 +236,15 @@ class TestStep09GetSupport:
         with open(seq_output, 'r') as f:
             lines = f.readlines()
 
+        # Should have 2 hits (both kept, including low probability one)
+        assert len(lines) == 2, f"Should keep both hits including low-probability one (got {len(lines)})"
+
         # Parse probabilities
         probs = [float(line.split('\t')[3]) for line in lines]
 
-        # All kept hits should have probability >= 50
-        for prob in probs:
-            assert prob >= 50, f"Probability {prob} should be >= 50"
+        # Should include the low probability hit (17.66)
+        assert any(prob < 50 for prob in probs), \
+            "Should KEEP low-probability hit (bug: was filtering prob < 50)"
 
     def test_structure_includes_sequence_support(self, test_prefix, working_dir,
                                                  mock_reference_data,
