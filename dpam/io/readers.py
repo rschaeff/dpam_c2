@@ -95,10 +95,12 @@ def read_structure_from_cif(
     residue_coords = {}
     residue_ids = []
     sequence_parts = []
-    
+    atom_names = {}
+    atom_elements = {}
+
     # Track alternate locations
     resid_to_altloc = {}
-    
+
     for residue in chain:
         resid = residue.seqid.num
         resname = residue.name
@@ -106,24 +108,26 @@ def read_structure_from_cif(
         # Skip HETATM records (only process ATOM records)
         if residue.het_flag == 'H':
             continue
-        
+
         # Get amino acid
         aa = three_to_one(resname)
-        
+
         # Handle alternate locations - take first encountered
         has_altloc = any(atom.altloc != '\0' for atom in residue)
-        
+
         if has_altloc:
             if resid not in resid_to_altloc:
                 # Record first altloc for this residue
                 first_altloc = next(
-                    atom.altloc for atom in residue 
+                    atom.altloc for atom in residue
                     if atom.altloc != '\0'
                 )
                 resid_to_altloc[resid] = first_altloc
-        
-        # Collect atom coordinates (skip hydrogens)
+
+        # Collect atom coordinates and names (skip hydrogens)
         coords = []
+        names = []
+        elements = []
         for atom in residue:
             if atom.is_hydrogen():
                 continue
@@ -132,26 +136,34 @@ def read_structure_from_cif(
             if has_altloc:
                 if atom.altloc == '\0' or atom.altloc == resid_to_altloc[resid]:
                     coords.append([atom.pos.x, atom.pos.y, atom.pos.z])
+                    names.append(atom.name)
+                    elements.append(atom.element.name)
             else:
                 coords.append([atom.pos.x, atom.pos.y, atom.pos.z])
-        
+                names.append(atom.name)
+                elements.append(atom.element.name)
+
         if coords:
             residue_coords[resid] = np.array(coords)
+            atom_names[resid] = names
+            atom_elements[resid] = elements
             if resid not in residue_ids:
                 residue_ids.append(resid)
                 sequence_parts.append(aa)
-    
+
     sequence = ''.join(sequence_parts)
     prefix = cif_path.stem
-    
+
     logger.debug(f"Extracted {len(residue_ids)} residues from chain {chain_id}")
-    
+
     return Structure(
         prefix=prefix,
         sequence=sequence,
         residue_coords=residue_coords,
         residue_ids=residue_ids,
-        chain_id=chain_id
+        chain_id=chain_id,
+        atom_names=atom_names,
+        atom_elements=atom_elements
     )
 
 
@@ -219,60 +231,87 @@ def read_structure_from_pdb(
 def extract_sequence_from_cif(cif_path: Path, chain_id: str = 'A') -> str:
     """
     Extract canonical sequence from CIF file (handles modified residues).
-    
+
     This replicates the logic from step1_get_AFDB_seqs.py
-    
+    Supports both AlphaFold (_pdbx_poly_seq_scheme) and BFVD (_entity_poly) formats.
+
     Args:
         cif_path: Path to CIF file
         chain_id: Chain to extract
-    
+
     Returns:
         Sequence string
     """
     logger.debug(f"Extracting sequence from CIF: {cif_path}")
-    
+
     doc = gemmi.cif.read_file(str(cif_path))
     block = doc.sole_block()
-    
+
     # Parse modified residue mappings
     modinfo = {}
     if block.find_loop('_pdbx_struct_mod_residue.label_asym_id'):
-        mod_table = block.find('_pdbx_struct_mod_residue.')
+        mod_table = block.find_mmcif_category('_pdbx_struct_mod_residue')
         for row in mod_table:
             chain = row.str(0)  # label_asym_id
             position = row.str(1)  # label_seq_id
-            mod_resname = row.str(3)  # label_comp_id  
+            mod_resname = row.str(3)  # label_comp_id
             parent_resname = row.str(2)  # parent_comp_id
-            
+
             if chain not in modinfo:
                 modinfo[chain] = {}
             modinfo[chain][position] = (mod_resname, parent_resname)
-    
-    # Extract sequence from pdbx_poly_seq_scheme
+
+    # Method 1: Try pdbx_poly_seq_scheme (AlphaFold format)
     sequence = []
-    
+
     if block.find_loop('_pdbx_poly_seq_scheme.entity_id'):
-        seq_table = block.find('_pdbx_poly_seq_scheme.')
-        
+        seq_table = block.find_mmcif_category('_pdbx_poly_seq_scheme')
+
         for row in seq_table:
-            chain = row.str(1)  # asym_id
+            chain = row.str(0)  # asym_id
             if chain != chain_id:
                 continue
-            
-            resname = row.str(2)  # mon_id
-            position = row.str(3)  # seq_id
-            
+
+            resname = row.str(4)  # mon_id
+            position = row.str(9)  # seq_id
+
             # Try direct conversion
             aa = three_to_one(resname)
-            
+
             # If unknown, check modified residue mapping
             if aa == 'X' and chain in modinfo and position in modinfo[chain]:
                 mod_name, parent_name = modinfo[chain][position]
                 if resname == mod_name:
                     aa = three_to_one(parent_name)
-            
+
             sequence.append(aa)
-    
+
+    # Method 2: Try _entity_poly.pdbx_seq_one_letter_code_can (BFVD simple format)
+    if not sequence:
+        try:
+            entity_poly = block.find_mmcif_category('_entity_poly.')
+            if entity_poly:
+                # Get canonical sequence (may be multi-line)
+                seq_str = block.find_value('_entity_poly.pdbx_seq_one_letter_code_can')
+                if seq_str and seq_str.str():
+                    # Remove whitespace and newlines
+                    canonical_seq = ''.join(seq_str.str().split())
+                    if canonical_seq:
+                        logger.debug(f"Extracted sequence from _entity_poly.pdbx_seq_one_letter_code_can: {len(canonical_seq)} residues")
+                        return canonical_seq
+        except Exception as e:
+            logger.debug(f"Failed to extract from _entity_poly: {e}")
+
+    # Method 3: Try _entity_poly_seq loop (BFVD detailed format)
+    if not sequence:
+        if block.find_loop('_entity_poly_seq.entity_id'):
+            seq_table = block.find_mmcif_category('_entity_poly_seq')
+            for row in seq_table:
+                # entity_id, num, mon_id (three-letter code)
+                resname = row.str(2)
+                aa = three_to_one(resname)
+                sequence.append(aa)
+
     return ''.join(sequence)
 
 

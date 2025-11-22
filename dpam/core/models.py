@@ -26,6 +26,18 @@ class PipelineStep(Enum):
     SSE = 11
     DISORDER = 12
     PARSE_DOMAINS = 13
+    # Step 14 is duplicate of step 13 in v1.0
+    PREPARE_DOMASS = 15
+    RUN_DOMASS = 16
+    GET_CONFIDENT = 17
+    GET_MAPPING = 18
+    GET_MERGE_CANDIDATES = 19
+    EXTRACT_DOMAINS = 20
+    COMPARE_DOMAINS = 21
+    MERGE_DOMAINS = 22
+    GET_PREDICTIONS = 23
+    INTEGRATE_RESULTS = 24
+    GENERATE_PDBS = 25
 
 
 @dataclass
@@ -36,6 +48,8 @@ class Structure:
     residue_coords: Dict[int, np.ndarray]  # resid -> [N_atoms, 3] coordinates
     residue_ids: List[int]
     chain_id: str = 'A'
+    atom_names: Dict[int, List[str]] = field(default_factory=dict)  # resid -> [atom_name1, atom_name2, ...]
+    atom_elements: Dict[int, List[str]] = field(default_factory=dict)  # resid -> [element1, element2, ...]
     
     def __len__(self) -> int:
         return len(self.sequence)

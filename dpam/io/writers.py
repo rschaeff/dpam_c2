@@ -37,12 +37,13 @@ def write_pdb(
 ) -> None:
     """
     Write structure to PDB format file.
-    
+
     Maintains backward compatibility with original format:
     - Coordinates truncated to 3 decimal places
     - Specific column formatting
     - Chain A only
-    
+    - Preserves actual atom names from source structure
+
     Args:
         output_path: Path to output PDB file
         structure: Structure to write
@@ -50,27 +51,41 @@ def write_pdb(
     """
     with open(output_path, 'w') as f:
         atom_count = 0
-        
+
         for resid in structure.residue_ids:
             coords = structure.residue_coords[resid]
             resname = structure.sequence[structure.residue_ids.index(resid)]
-            
+
             # Convert one-letter to three-letter
             from dpam.utils.amino_acids import one_to_three
             resname_3 = one_to_three(resname)
-            
+
+            # Get atom names and elements for this residue
+            names = structure.atom_names.get(resid, [])
+            elements = structure.atom_elements.get(resid, [])
+
             # Write each atom
             for atom_idx, coord in enumerate(coords):
                 atom_count += 1
-                
-                # Determine atom name (simplified - would need full atom info)
-                # For now, use generic naming
-                atom_name = f"ATOM{atom_idx+1}"
-                if len(atom_name) < 4:
-                    atom_name = f" {atom_name:<3}"
+
+                # Use actual atom name if available, otherwise generic
+                if atom_idx < len(names):
+                    atom_name = names[atom_idx]
+                    # PDB format: atom name is left-justified in columns 13-16 (4 chars)
+                    # For atom names with 1-3 chars, pad with space on left
+                    if len(atom_name) < 4:
+                        atom_name = f" {atom_name:<3}"
+                    else:
+                        atom_name = atom_name[:4]
                 else:
-                    atom_name = atom_name[:4]
-                
+                    atom_name = f" CA "  # Default to CA if missing
+
+                # Get element symbol
+                if atom_idx < len(elements):
+                    element = elements[atom_idx]
+                else:
+                    element = "C"  # Default
+
                 # Format coordinates
                 x, y, z = coord
                 if truncate_coords:
@@ -89,19 +104,16 @@ def write_pdb(
                     x_str = f"{x:.3f}"
                     y_str = f"{y:.3f}"
                     z_str = f"{z:.3f}"
-                
-                # Atom type (simplified - just use first char)
-                atom_type = "C"  # Default
-                
-                # Write PDB line
+
+                # Write PDB line (PDB format)
                 line = (
                     f"ATOM  {atom_count:>5} {atom_name} "
                     f"{resname_3:<3} {structure.chain_id}{resid:>4}    "
                     f"{x_str:>8}{y_str:>8}{z_str:>8}"
-                    f"  1.00  0.00           {atom_type}\n"
+                    f"  1.00  0.00           {element:>2}\n"
                 )
                 f.write(line)
-    
+
     logger.debug(f"Wrote PDB to {output_path}")
 
 
