@@ -119,6 +119,129 @@ class TestStep23GetPredictions:
             assert parts[0] in ['full', 'part', 'miss'], \
                 f"Row {i} should have valid classification"
 
+    def test_step23_single_assignment_per_domain(self, test_prefix, working_dir, ecod_data_dir):
+        """
+        Regression test: Verify Step 23 outputs exactly ONE ECOD assignment per domain.
+
+        Bug: Step 23 was outputting ALL ECOD predictions that passed thresholds
+        instead of selecting the SINGLE BEST assignment per domain. This resulted
+        in domains receiving 10-30 different ECOD family assignments.
+
+        Expected behavior:
+        - Sort ECODs by probability (descending)
+        - Select best "full" match if available
+        - Else select best "part" match
+        - Else output top ECOD as "miss"
+        - Output exactly ONE line per domain
+        """
+        # Setup domain with multiple ECOD predictions
+        (working_dir / f"{test_prefix}.step13_domains").write_text(
+            "D1\t10-70\n"
+            "D2\t80-150\n"
+            "D3\t160-250\n"
+        )
+
+        # Create predictions: D1 has 5 different ECODs, D2 has 3, D3 has 1
+        (working_dir / f"{test_prefix}.step16_predictions").write_text(
+            "Domain\tRange\tTgroup\tECOD_ref\tDPAM_prob\tHH_prob\tHH_cov\tHH_rank\t"
+            "DALI_zscore\tDALI_qscore\tDALI_ztile\tDALI_qtile\tDALI_rank\t"
+            "Consensus_diff\tConsensus_cov\tHH_hit\tDALI_hit\tDALI_rot1\tDALI_rot2\tDALI_rot3\tDALI_trans\n"
+            # D1: 5 different ECODs (should select e1_best_full with highest prob)
+            "D1\t10-70\t101.1.1\te1_best_full\t0.950\t0.984\t0.80\t0.10\t9.0\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.95\t001\t001\tna\tna\tna\tna\n"
+            "D1\t10-70\t101.1.1\te1_other_full\t0.900\t0.982\t0.75\t0.10\t8.5\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.93\t002\t002\tna\tna\tna\tna\n"
+            "D1\t10-70\t101.1.1\te1_part_1\t0.880\t0.980\t0.60\t0.10\t8.0\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.90\t003\t003\tna\tna\tna\tna\n"
+            "D1\t10-70\t101.1.1\te1_part_2\t0.870\t0.978\t0.55\t0.10\t7.5\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.88\t004\t004\tna\tna\tna\tna\n"
+            "D1\t10-70\t101.1.1\te1_miss\t0.750\t0.975\t0.40\t0.10\t7.0\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.85\t005\t005\tna\tna\tna\tna\n"
+            # D2: 3 different ECODs (no full match, should select e2_best_part)
+            "D2\t80-150\t102.1.1\te2_best_part\t0.920\t0.983\t0.50\t0.10\t8.8\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.92\t006\t006\tna\tna\tna\tna\n"
+            "D2\t80-150\t102.1.1\te2_other_part\t0.880\t0.980\t0.45\t0.10\t8.2\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.89\t007\t007\tna\tna\tna\tna\n"
+            "D2\t80-150\t102.1.1\te2_miss\t0.800\t0.978\t0.30\t0.10\t7.8\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.86\t008\t008\tna\tna\tna\tna\n"
+            # D3: 1 ECOD (should output e3_only)
+            "D3\t160-250\t103.1.1\te3_only\t0.890\t0.985\t0.70\t0.10\t9.2\t-1.0\t-1.0\t-1.0\t1.0\t-1.0\t0.94\t009\t009\tna\tna\tna\tna\n"
+        )
+
+        # Create mappings with varying coverage
+        (working_dir / f"{test_prefix}.step18_mappings").write_text(
+            "# domain\tdomain_range\tecod_id\ttgroup\tdpam_prob\tquality\thh_template_range\tdali_template_range\n"
+            # D1 ECODs: e1_best_full and e1_other_full qualify as "full"
+            "D1\t10-70\te1_best_full\t101.1.1\t0.950\tgood\tna\t1-100\n"  # 100/120 = 83% coverage (full)
+            "D1\t10-70\te1_other_full\t101.1.1\t0.900\tgood\tna\t1-85\n"   # 85/120 = 71% coverage (full)
+            "D1\t10-70\te1_part_1\t101.1.1\t0.880\tgood\tna\t1-50\n"       # 50/120 = 42% coverage (part)
+            "D1\t10-70\te1_part_2\t101.1.1\t0.870\tgood\tna\t1-45\n"       # 45/120 = 38% coverage (part)
+            "D1\t10-70\te1_miss\t101.1.1\t0.750\tgood\tna\t1-20\n"         # 20/120 = 17% coverage (miss)
+            # D2 ECODs: only "part" matches (coverage < 66%)
+            "D2\t80-150\te2_best_part\t102.1.1\t0.920\tgood\tna\t1-55\n"   # 55/130 = 42% coverage (part)
+            "D2\t80-150\te2_other_part\t102.1.1\t0.880\tgood\tna\t1-50\n"  # 50/130 = 38% coverage (part)
+            "D2\t80-150\te2_miss\t102.1.1\t0.800\tgood\tna\t1-25\n"        # 25/130 = 19% coverage (miss)
+            # D3 ECODs: single full match
+            "D3\t160-250\te3_only\t103.1.1\t0.890\tgood\tna\t1-90\n"       # 90/125 = 72% coverage (full)
+        )
+
+        # Create ECOD lengths
+        (ecod_data_dir / "ECOD_length").write_text(
+            "001\te1_best_full\t120\n"
+            "002\te1_other_full\t120\n"
+            "003\te1_part_1\t120\n"
+            "004\te1_part_2\t120\n"
+            "005\te1_miss\t120\n"
+            "006\te2_best_part\t130\n"
+            "007\te2_other_part\t130\n"
+            "008\te2_miss\t130\n"
+            "009\te3_only\t125\n"
+        )
+
+        (ecod_data_dir / "tgroup_length").write_text(
+            "101.1.1\t60.0\n"
+            "102.1.1\t70.0\n"
+            "103.1.1\t90.0\n"
+        )
+
+        posi_weights_dir = ecod_data_dir / "posi_weights"
+        posi_weights_dir.mkdir(parents=True, exist_ok=True)
+
+        # Run step 23
+        success = run_step23(test_prefix, working_dir, ecod_data_dir)
+        assert success, "Step 23 should succeed"
+
+        # Parse output
+        output_file = working_dir / f"{test_prefix}.step23_predictions"
+        with open(output_file) as f:
+            lines = f.readlines()
+
+        # Count assignments per domain
+        domain_assignments = {}
+        for line in lines[1:]:  # Skip header
+            parts = line.strip().split('\t')
+            domain = parts[1]
+            ecod = parts[3]
+
+            if domain not in domain_assignments:
+                domain_assignments[domain] = []
+            domain_assignments[domain].append((ecod, parts[0]))  # (ecod, classification)
+
+        # CRITICAL: Each domain should have exactly ONE assignment
+        assert len(domain_assignments['D1']) == 1, \
+            f"D1 should have 1 assignment, got {len(domain_assignments['D1'])} (bug: outputs all ECODs)"
+        assert len(domain_assignments['D2']) == 1, \
+            f"D2 should have 1 assignment, got {len(domain_assignments['D2'])}"
+        assert len(domain_assignments['D3']) == 1, \
+            f"D3 should have 1 assignment, got {len(domain_assignments['D3'])}"
+
+        # Verify correct ECOD selected (best "full" > best "part" > best "miss")
+        d1_ecod, d1_class = domain_assignments['D1'][0]
+        assert d1_ecod == 'e1_best_full', \
+            f"D1 should select e1_best_full (highest prob full match), got {d1_ecod}"
+        assert d1_class == 'full', f"D1 should be classified as 'full', got {d1_class}"
+
+        d2_ecod, d2_class = domain_assignments['D2'][0]
+        assert d2_ecod == 'e2_best_part', \
+            f"D2 should select e2_best_part (no full match, highest prob part), got {d2_ecod}"
+        assert d2_class == 'part', f"D2 should be classified as 'part', got {d2_class}"
+
+        d3_ecod, d3_class = domain_assignments['D3'][0]
+        assert d3_ecod == 'e3_only', f"D3 should select e3_only, got {d3_ecod}"
+        assert d3_class == 'full', f"D3 should be classified as 'full', got {d3_class}"
+
     def test_step23_classification_logic(self, test_prefix, working_dir, ecod_data_dir):
         """Test that step 23 correctly classifies predictions as full/part/miss."""
         # Setup input with varying probabilities and coverage
@@ -161,23 +284,18 @@ class TestStep23GetPredictions:
         success = run_step23(test_prefix, working_dir, ecod_data_dir)
         assert success
 
-        # Parse output and check classifications
+        # Parse output and check that only ONE assignment is made
         output_file = working_dir / f"{test_prefix}.step23_predictions"
         with open(output_file) as f:
             lines = f.readlines()
 
-        classifications = {}
-        for line in lines[1:]:  # Skip header
-            parts = line.strip().split('\t')
-            classification = parts[0]
-            ecod = parts[3]
-            classifications[ecod] = classification
+        # Should have exactly ONE assignment (D1 with best "full" match)
+        assert len(lines) == 2, f"Should have header + 1 assignment, got {len(lines)}"
 
-        # Note: Classifications depend on actual coverage calculations
-        # Just verify all three are classified
-        assert len(classifications) == 3, "Should classify all three predictions"
-        assert all(c in ['full', 'part', 'miss'] for c in classifications.values()), \
-            "All classifications should be valid"
+        # Verify it selected the best "full" match
+        parts = lines[1].strip().split('\t')
+        assert parts[0] == 'full', "Should select 'full' classification"
+        assert parts[3] == 'e_full', "Should select e_full (highest prob full match)"
 
 
 @pytest.mark.unit

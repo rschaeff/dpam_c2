@@ -245,8 +245,19 @@ def run_step23(
             elif pred['dpam_prob'] > ecod_to_best[ecod]['dpam_prob']:
                 ecod_to_best[ecod] = pred
 
-        # Classify each ECOD prediction
-        for ecod, pred in ecod_to_best.items():
+        # Sort ECODs by probability (descending) to prioritize best matches
+        sorted_ecods = sorted(
+            ecod_to_best.items(),
+            key=lambda x: x[1]['dpam_prob'],
+            reverse=True
+        )
+
+        # Find best "full" and "part" candidates
+        best_full = None
+        best_part = None
+        best_miss = None
+
+        for ecod, pred in sorted_ecods:
             if ecod not in ecod_lengths:
                 continue
 
@@ -297,6 +308,25 @@ def run_step23(
             else:
                 classification = 'miss'
 
+            # Build candidate tuple
+            candidate = (
+                classification, domain_list, merged_range, ecod, tgroup,
+                dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio
+            )
+
+            # Keep best candidate of each type
+            if classification == 'full' and best_full is None:
+                best_full = candidate
+            elif classification == 'part' and best_part is None:
+                best_part = candidate
+            elif best_miss is None:
+                best_miss = candidate
+
+        # Output single best match (prefer full > part > miss)
+        best_candidate = best_full or best_part or best_miss
+
+        if best_candidate:
+            classification, domain_list, merged_range, ecod, tgroup, dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio = best_candidate
             results.append(
                 f"{classification}\t{domain_list}\t{merged_range}\t{ecod}\t{tgroup}\t"
                 f"{dpam_prob:.3f}\t{hh_prob:.3f}\t{dali_zscore:.3f}\t"
@@ -324,8 +354,19 @@ def run_step23(
             elif pred['dpam_prob'] > ecod_to_best[ecod]['dpam_prob']:
                 ecod_to_best[ecod] = pred
 
-        # Classify each ECOD prediction
-        for ecod, pred in ecod_to_best.items():
+        # Sort ECODs by probability (descending) to prioritize best matches
+        sorted_ecods = sorted(
+            ecod_to_best.items(),
+            key=lambda x: x[1]['dpam_prob'],
+            reverse=True
+        )
+
+        # Find best "full" and "part" candidates
+        best_full = None
+        best_part = None
+        best_miss = None
+
+        for ecod, pred in sorted_ecods:
             if ecod not in ecod_lengths:
                 continue
 
@@ -374,6 +415,25 @@ def run_step23(
             else:
                 classification = 'miss'
 
+            # Build candidate tuple
+            candidate = (
+                classification, domain, domain_range, ecod, tgroup,
+                dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio
+            )
+
+            # Keep best candidate of each type
+            if classification == 'full' and best_full is None:
+                best_full = candidate
+            elif classification == 'part' and best_part is None:
+                best_part = candidate
+            elif best_miss is None:
+                best_miss = candidate
+
+        # Output single best match (prefer full > part > miss)
+        best_candidate = best_full or best_part or best_miss
+
+        if best_candidate:
+            classification, domain, domain_range, ecod, tgroup, dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio = best_candidate
             results.append(
                 f"{classification}\t{domain}\t{domain_range}\t{ecod}\t{tgroup}\t"
                 f"{dpam_prob:.3f}\t{hh_prob:.3f}\t{dali_zscore:.3f}\t"
