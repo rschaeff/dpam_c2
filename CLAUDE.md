@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DPAM v2.0 is a modern Python 3 reimplementation of the Domain Parser for AlphaFold Models. It identifies structural domains through a 13-step pipeline integrating sequence homology (HHsearch), structural similarity (Foldseek, DALI), geometric analysis, and confidence metrics (pLDDT, PAE).
+DPAM v2.0 is a modern Python 3 reimplementation of the Domain Parser for AlphaFold Models. It identifies structural domains through a 24-step pipeline integrating sequence homology (HHsearch), structural similarity (Foldseek, DALI), geometric analysis, confidence metrics (pLDDT, PAE), and machine learning (DOMASS/TensorFlow) for ECOD classification.
 
 ## Development Setup
 
@@ -16,7 +16,11 @@ pip install -e . --break-system-packages
 pip install -e ".[dev]" --break-system-packages
 
 # Run tests
-pytest tests/
+pytest tests/                    # All tests
+pytest tests/unit/               # Unit tests only (fast, no external deps)
+pytest tests/integration/        # Integration tests (require external tools)
+pytest -m "not slow"             # Skip slow tests
+pytest tests/integration/test_step02_hhsearch.py::TestStep02HHsearch::test_hhsearch_basic  # Single test
 
 # With coverage
 pytest --cov=dpam tests/
@@ -70,6 +74,9 @@ dpam slurm-submit prefixes.txt \
   --array-size 100
 ```
 
+**CRITICAL - SLURM I/O Performance:**
+The SLURM submission automatically copies the UniRef30 database (~260GB) to each node's local scratch space before running. HHblits is extremely I/O intensive - running hundreds of jobs against a shared NFS mount will saturate network bandwidth and destroy cluster performance for all users. Database copy takes 2-5 minutes but prevents hours of NFS thrashing. The generated SLURM script in `dpam/pipeline/slurm.py` handles this automatically via rsync to `$TMPDIR` or `/tmp/slurm-$SLURM_JOB_ID`.
+
 ## Architecture
 
 ### Module Structure
@@ -78,16 +85,26 @@ dpam/
 ├── core/           # Type-safe dataclasses (Structure, Domain, Hit, PipelineState)
 ├── io/             # Readers (Gemmi-based CIF/PDB), writers, parsers (tool outputs)
 ├── tools/          # Wrappers for external tools (HHsuite, Foldseek, DALI, DSSP)
-├── steps/          # Pipeline step implementations (step01-step13)
+├── steps/          # Pipeline step implementations (step01-step24)
 ├── pipeline/       # Orchestration (runner, batch, slurm)
 ├── cli/            # Command-line interface
 └── utils/          # Utilities (ranges, amino acids, logging)
 ```
 
-### Pipeline Steps (1-13)
+**Critical Architecture Notes:**
+- **Pipeline steps are loosely coupled**: Each step reads from working directory files and writes to working directory files. Steps only communicate via files, not in-memory objects.
+- **Reference data is immutable**: ECOD databases loaded once in `DPAMPipeline.__init__()` and passed to steps as read-only data.
+- **State management is external**: Pipeline state tracked in `.{prefix}.dpam_state.json` files, not in Python objects. Enables resume across process restarts.
+- **Tool abstraction prevents mocking issues**: All external tools inherit from `ExternalTool` base class in `tools/base.py` with `check_availability()` and `run_command()` methods.
+- **Dynamic step execution**: `DPAMPipeline._execute_step()` uses if/elif chain to import step modules dynamically. To add a new step, update `PipelineStep` enum in `core/models.py` and add corresponding elif branch in `pipeline/runner.py:_execute_step()`.
 
-**Current Status: 13/13 steps implemented (100%) ✅**
+### Pipeline Steps (1-25)
 
+**Current Status: 24/25 core steps implemented (96%); ML pipeline fully validated**
+
+**Latest Update (2025-10-18)**: Steps 15-24 successfully tested end-to-end on validation protein O33946. All critical bugs fixed. See `docs/END_TO_END_PIPELINE.md` for complete workflow documentation.
+
+#### Phase 1: Domain Identification (Steps 1-13)
 | Step | Name | Status | File |
 |------|------|--------|------|
 | 1 | PREPARE | ✅ Implemented | `steps/step01_prepare.py` |
@@ -103,6 +120,46 @@ dpam/
 | 11 | SSE | ✅ Implemented | `steps/step11_sse.py` |
 | 12 | DISORDER | ✅ Implemented | `steps/step12_disorder.py` |
 | 13 | PARSE_DOMAINS | ✅ Implemented | `steps/step13_parse_domains.py` |
+
+#### Phase 2: ECOD Assignment via DOMASS ML (Steps 14-19)
+| Step | Name | Status | Description |
+|------|------|--------|-------------|
+| 14 | PARSE_DOMAINS_V1 | ✅ Duplicate | Same as step 13 in v1.0 |
+| 15 | PREPARE_DOMASS | ✅ Implemented | Extract 17 ML features per domain-ECOD pair (`steps/step15_prepare_domass.py`) |
+| 16 | RUN_DOMASS | ✅ Implemented | Run TensorFlow model for ECOD classification (`steps/step16_run_domass.py`) |
+| 17 | GET_CONFIDENT | ✅ Implemented | Filter for high-confidence assignments (`steps/step17_get_confident.py`) |
+| 18 | GET_MAPPING | ✅ Implemented | Map domains to ECOD template residues (`steps/step18_get_mapping.py`) |
+| 19 | GET_MERGE_CANDIDATES | ✅ Implemented | Identify domains to merge (`steps/step19_get_merge_candidates.py`) |
+
+#### Phase 3: Domain Refinement & Output (Steps 20-25)
+| Step | Name | Status | Description |
+|------|------|--------|-------------|
+| 20 | EXTRACT_DOMAINS | ✅ Implemented | Extract domain PDB files for merge candidates (`steps/step20_extract_domains.py`) |
+| 21 | COMPARE_DOMAINS | ✅ Implemented | Test sequence/structure connectivity (`steps/step21_compare_domains.py`) |
+| 22 | MERGE_DOMAINS | ✅ Implemented | Merge domains via transitive closure (`steps/step22_merge_domains.py`) |
+| 23 | GET_PREDICTIONS | ✅ Implemented | Classify domains as full/part/miss (`steps/step23_get_predictions.py`) |
+| 24 | INTEGRATE_RESULTS | ✅ Implemented | Refine with SSE analysis, assign final labels (`steps/step24_integrate_results.py`) |
+| 25 | GENERATE_PDBS | ⚠️ Optional | Generate visualization (PyMOL, HTML) |
+
+**DOMASS ML Model**: Steps 15-19, 23 use a trained TensorFlow model (`domass_epo29.*` files) to assign ECOD classifications. The model uses 13 of 17 extracted features: domain properties (length, SSE counts), HHsearch scores (probability, coverage, rank), DALI scores (z-score, q-score, percentiles, rank), and consensus metrics (alignment agreement). See `docs/ML_PIPELINE_SETUP.md` for setup instructions.
+
+**ML Pipeline Requirements**:
+- TensorFlow installed (`pip install tensorflow`)
+- Trained model checkpoint files: `domass_epo29.meta`, `.index`, `.data-*` in data directory
+- Additional reference files: `tgroup_length`, `posi_weights/` directory
+
+**ML Pipeline Validation (2025-10-18)**:
+- ✅ **Batch tested on 15 validation proteins** (70-1245 residues, 1-9 domains)
+- ✅ **100% completion rate** (15/15 proteins processed successfully)
+- ✅ Fixed step 15 input file paths (`.goodDomains` instead of `.hhsearch`)
+- ✅ Fixed step 15 ECOD hierarchy loading (column 1 instead of column 0)
+- ✅ Fixed step 16 TensorFlow model architecture (layer names `dense`/`dense_1`)
+- ✅ All steps (15-24) functional across diverse protein sizes
+- 📊 Performance: 4.8s average per protein (range: 1.7-14.6s for 9-1872 features)
+- 📊 Feature generation: avg 537.7 features, avg 62.2 high-confidence predictions
+- ⚠️ Known issue: Small proteins (<100 features) need dynamic batch size fix
+- See `docs/END_TO_END_PIPELINE.md` for single-protein validation details
+- See `docs/ML_PIPELINE_BATCH_TEST.md` for comprehensive batch testing results
 
 ### Key Design Patterns
 
@@ -158,8 +215,32 @@ Compare outputs with v1.0 during testing to ensure compatibility.
 Required in PATH:
 - **HHsuite**: hhblits, hhmake, hhsearch, addss.pl
 - **Foldseek**: foldseek (easy-search command)
-- **DALI**: dali.pl
-- **DSSP**: mkdssp
+- **DALI**: dali.pl (from DaliLite.v5)
+- **DSSP**: mkdssp or dsspcmbi (from DaliLite.v5)
+
+### DaliLite.v5 Integration
+
+DPAM now supports automatic detection of DaliLite.v5 installation:
+
+**Search order for DALI (dali.pl):**
+1. `$DALI_HOME/bin/dali.pl` (if DALI_HOME env var set)
+2. `~/src/Dali_v5/DaliLite.v5/bin/dali.pl` (standard location)
+3. System PATH
+
+**Search order for DSSP:**
+1. `$DALI_HOME/bin/dsspcmbi` (DaliLite version, preferred)
+2. `~/src/Dali_v5/DaliLite.v5/bin/dsspcmbi` (standard location)
+3. `mkdssp` in PATH (modern version)
+4. `dsspcmbi` in PATH
+
+**To use custom DALI installation:**
+```bash
+export DALI_HOME=/path/to/DaliLite.v5
+```
+
+**Standard installation location:**
+- DaliLite.v5 should be installed at `~/src/Dali_v5/DaliLite.v5/`
+- Binaries in `bin/` directory: `dali.pl`, `dsspcmbi`, `serialcompare`, etc.
 
 On HPC clusters, load via modules:
 ```bash
@@ -244,10 +325,19 @@ This affects how residues are grouped into segments and is critical for matching
 >{edomain}_{iteration}\t{zscore}\t{n_aligned}\t{q_len}\t{t_len}
 ```
 
-### Remaining Steps (8-13)
+### ML Pipeline Integration (Steps 15-23)
 
-**Next priority**: Step 8 (Analyze DALI) - parses iterative DALI results, calculates scores and percentiles
+**Implementation Status**: All ML steps fully implemented and integrated into pipeline runner.
 
-**Independent step**: Step 11 (SSE) can be implemented independently using existing DSSP wrapper
+**Key Integration Points**:
+- Step 13 writes both `.finalDPAM.domains` and `.step13_domains` for ML pipeline compatibility
+- Utility functions `parse_range` and `format_range` added as aliases for ML step imports
+- All steps integrated into `DPAMPipeline._execute_step()` method
+- PipelineStep enum includes all ML steps
 
-**Most complex**: Step 13 (Parse Domains) requires probability calculations, clustering, and multiple refinement passes (~500 lines estimated)
+**Setup Requirements**:
+- Install TensorFlow: `pip install tensorflow`
+- Obtain trained model files: `domass_epo29.*` checkpoint in data directory
+- Ensure reference data includes: `tgroup_length`, `posi_weights/` directory
+
+**Documentation**: See `docs/ML_PIPELINE_SETUP.md` for complete setup and usage guide
