@@ -90,31 +90,125 @@ class ValidationResult:
 
 
 # File patterns to compare for each step
+# Maps dpam_c2 step names to (v1_files, v2_files) tuples
+# v1.0 uses bare UniProt IDs (e.g., A0A024R1R8)
+# dpam_c2 uses full AF- prefix (e.g., AF-A0A024R1R8-F1)
 STEP_FILES = {
-    'PREPARE': ['{prefix}.pdb', '{prefix}.fasta'],
-    'HHSEARCH': ['{prefix}.hhsearch'],
-    'FOLDSEEK': ['{prefix}.foldseek'],
-    'FILTER_FOLDSEEK': ['{prefix}.filtered_foldseek'],
-    'MAP_ECOD': ['{prefix}.map2ecod.result'],
-    'DALI_CANDIDATES': ['{prefix}.good_hits'],
-    'ITERATIVE_DALI': ['{prefix}_iterativdDali_hits'],
-    'ANALYZE_DALI': [],  # Individual DALI files - handle separately
-    'GET_SUPPORT': ['{prefix}.goodDomains'],
-    'FILTER_DOMAINS': ['{prefix}.filtered_domains'],
-    'SSE': ['{prefix}.sse'],
-    'DISORDER': ['{prefix}.diso'],
-    'PARSE_DOMAINS': ['{prefix}.finalDPAM.domains', '{prefix}.step13_domains'],
-    'PREPARE_DOMASS': ['{prefix}.domass_features'],
-    'RUN_DOMASS': ['{prefix}.step16_predictions'],
-    'GET_CONFIDENT': ['{prefix}.step17_confident'],
-    'GET_MAPPING': ['{prefix}.step18_mappings'],
-    'GET_MERGE_CANDIDATES': ['{prefix}.step19_merge_candidates'],
-    'EXTRACT_DOMAINS': [],  # Domain PDB files - handle separately
-    'COMPARE_DOMAINS': ['{prefix}.step21_comparisons'],
-    'MERGE_DOMAINS': ['{prefix}.step22_merged_domains'],
-    'GET_PREDICTIONS': ['{prefix}.step23_predictions'],
-    'INTEGRATE_RESULTS': ['{prefix}.finalDPAM.domains'],
+    # v1.0 Steps 1-2 → dpam_c2 Step 1 (PREPARE)
+    'PREPARE': {
+        'v1': ['{v1_prefix}.fa', '{v1_prefix}.pdb'],
+        'v2': ['{v2_prefix}.fasta', '{v2_prefix}.pdb'],
+    },
+    # v1.0 Step 3 → dpam_c2 Step 2 (HHSEARCH)
+    'HHSEARCH': {
+        'v1': ['{v1_prefix}.hhsearch'],
+        'v2': ['{v2_prefix}.hhsearch'],
+    },
+    # v1.0 Step 4 → dpam_c2 Step 3 (FOLDSEEK)
+    'FOLDSEEK': {
+        'v1': ['{v1_prefix}.foldseek'],
+        'v2': ['{v2_prefix}.foldseek'],
+    },
+    # v1.0 Steps 5-6 → dpam_c2 Step 5 (MAP_ECOD)
+    'MAP_ECOD': {
+        'v1': ['{v1_prefix}_sequence.result', '{v1_prefix}_structure.result'],
+        'v2': ['{v2_prefix}.map2ecod.result'],  # v2 merges both
+    },
+    # v1.0 Step 7 → dpam_c2 Step 6 (DALI_CANDIDATES)
+    'DALI_CANDIDATES': {
+        'v1': ['{v1_prefix}_good_hits'],
+        'v2': ['{v2_prefix}_good_hits'],
+    },
+    # v1.0 Step 8 → dpam_c2 Step 7 (ITERATIVE_DALI)
+    'ITERATIVE_DALI': {
+        'v1': ['{v1_prefix}_hits'],
+        'v2': ['{v2_prefix}_iterativdDali_hits'],
+    },
+    # v1.0 Step 9 → dpam_c2 Step 8 (ANALYZE_DALI)
+    'ANALYZE_DALI': {
+        'v1': ['{v1_prefix}_good_hits'],
+        'v2': ['{v2_prefix}_good_hits'],
+    },
+    # v1.0 Step 10 → dpam_c2 Step 9 (GET_SUPPORT)
+    'GET_SUPPORT': {
+        'v1': ['{v1_prefix}_sequence.result', '{v1_prefix}_structure.result'],
+        'v2': ['{v2_prefix}.support.result'],  # If v2 outputs this
+    },
+    # v1.0 Step 11 → dpam_c2 Step 10 (FILTER_DOMAINS)
+    'FILTER_DOMAINS': {
+        'v1': ['{v1_prefix}.goodDomains'],
+        'v2': ['{v2_prefix}.goodDomains'],
+    },
+    # v1.0 Step 12 → dpam_c2 Step 11 (SSE)
+    'SSE': {
+        'v1': ['{v1_prefix}.sse'],
+        'v2': ['{v2_prefix}.sse'],
+    },
+    # v1.0 Step 13 → dpam_c2 Step 12 (DISORDER)
+    'DISORDER': {
+        'v1': ['{v1_prefix}.diso'],
+        'v2': ['{v2_prefix}.diso'],
+    },
+    # v1.0 Step 14 → dpam_c2 Step 13 (PARSE_DOMAINS)
+    'PARSE_DOMAINS': {
+        'v1': ['{v1_prefix}.domains'],
+        'v2': ['{v2_prefix}.step13_domains', '{v2_prefix}.finalDPAM.domains'],
+    },
+    # v1.0 Step 15 → dpam_c2 Step 15 (PREPARE_DOMASS)
+    'PREPARE_DOMASS': {
+        'v1': ['{v1_prefix}.data'],
+        'v2': ['{v2_prefix}.domass_features'],
+    },
+    # v1.0 Step 16 → dpam_c2 Step 16 (RUN_DOMASS)
+    'RUN_DOMASS': {
+        'v1': ['{v1_prefix}.result'],  # step16 .result file
+        'v2': ['{v2_prefix}.step16_predictions'],
+    },
+    # v1.0 Step 17 → dpam_c2 Step 17 (GET_CONFIDENT)
+    'GET_CONFIDENT': {
+        'v1': ['{v1_prefix}.result'],  # step17 .result file
+        'v2': ['{v2_prefix}.step17_confident'],
+    },
+    # v1.0 Step 18 → dpam_c2 Step 18 (GET_MAPPING)
+    'GET_MAPPING': {
+        'v1': ['{v1_prefix}.data'],  # step18 .data file
+        'v2': ['{v2_prefix}.step18_mappings'],
+    },
+    # v1.0 Step 19 → dpam_c2 Step 19 (GET_MERGE_CANDIDATES)
+    'GET_MERGE_CANDIDATES': {
+        'v1': ['{v1_prefix}.result'],  # step19 .result file
+        'v2': ['{v2_prefix}.step19_merge_candidates'],
+    },
+    # v1.0 Step 23 → dpam_c2 Step 23 (GET_PREDICTIONS)
+    'GET_PREDICTIONS': {
+        'v1': ['{v1_prefix}.assign'],
+        'v2': ['{v2_prefix}.step23_predictions'],
+    },
+    # v1.0 Step 24 → dpam_c2 Step 24 (INTEGRATE_RESULTS)
+    'INTEGRATE_RESULTS': {
+        'v1': ['{v1_prefix}_domains'],
+        'v2': ['{v2_prefix}.finalDPAM.domains'],
+    },
 }
+
+
+def convert_protein_id(full_id: str) -> str:
+    """
+    Convert full AlphaFold ID to bare UniProt ID for v1.0 compatibility.
+
+    Args:
+        full_id: Full ID like 'AF-A0A024R1R8-F1'
+
+    Returns:
+        Bare UniProt ID like 'A0A024R1R8'
+    """
+    # Remove AF- prefix and -F1 suffix
+    if full_id.startswith('AF-'):
+        bare_id = full_id[3:]  # Remove 'AF-'
+        if '-F' in bare_id:
+            bare_id = bare_id[:bare_id.rfind('-F')]  # Remove '-F1'
+        return bare_id
+    return full_id
 
 
 def compare_text_files(v1_file: Path, v2_file: Path, ignore_whitespace: bool = False) -> Tuple[bool, str]:
@@ -221,8 +315,8 @@ def compare_numeric_files(v1_file: Path, v2_file: Path, tolerance: float = 1e-6)
 
 def validate_step(
     step_name: str,
-    prefix: str,
-    v1_dir: Path,
+    v2_prefix: str,
+    v1_protein_dir: Path,
     v2_dir: Path,
     numeric_files: List[str] = None
 ) -> ValidationResult:
@@ -231,55 +325,101 @@ def validate_step(
 
     Args:
         step_name: Step name (e.g., 'HHSEARCH')
-        prefix: Protein prefix (e.g., 'AF-P12345')
-        v1_dir: DPAM v1.0 output directory
-        v2_dir: dpam_c2 output directory
-        numeric_files: List of file patterns that contain numeric data
+        v2_prefix: dpam_c2 protein prefix (e.g., 'AF-A0A024R1R8-F1')
+        v1_protein_dir: v1.0 protein-specific directory (e.g., v1_outputs/AF-A0A024R1R8-F1/)
+        v2_dir: dpam_c2 working directory
+        numeric_files: List of file extensions that contain numeric data
 
     Returns:
         ValidationResult object
     """
-    result = ValidationResult(step_name, prefix)
+    result = ValidationResult(step_name, v2_prefix)
 
     if step_name not in STEP_FILES:
         result.add_difference(step_name, 'ERROR', 'Unknown step', critical=True)
         return result
 
+    # Get v1.0 prefix (bare UniProt ID)
+    v1_prefix = convert_protein_id(v2_prefix)
+
     numeric_files = numeric_files or []
-    file_patterns = STEP_FILES[step_name]
+    step_patterns = STEP_FILES[step_name]
 
-    for pattern in file_patterns:
-        filename = pattern.format(prefix=prefix)
-        v1_file = v1_dir / filename
-        v2_file = v2_dir / filename
+    v1_patterns = step_patterns['v1']
+    v2_patterns = step_patterns['v2']
 
-        # Check if files exist
+    # Handle cases where v1 and v2 have different numbers of files
+    # E.g., MAP_ECOD: v1 has 2 files (_sequence.result, _structure.result)
+    #                 v2 has 1 file (.map2ecod.result)
+
+    if len(v1_patterns) == len(v2_patterns):
+        # 1:1 mapping - compare files directly
+        file_pairs = list(zip(v1_patterns, v2_patterns))
+    elif len(v1_patterns) > len(v2_patterns):
+        # v1 has more files (e.g., MAP_ECOD) - check all v1 files exist
+        # but only compare first v2 file
+        file_pairs = []
+        for i, v1_pattern in enumerate(v1_patterns):
+            if i < len(v2_patterns):
+                file_pairs.append((v1_pattern, v2_patterns[i]))
+            else:
+                # Check v1 file exists but don't compare (no v2 equivalent)
+                file_pairs.append((v1_pattern, None))
+    else:
+        # v2 has more files - compare what we can
+        file_pairs = list(zip(v1_patterns, v2_patterns[:len(v1_patterns)]))
+
+    for v1_pattern, v2_pattern in file_pairs:
+        v1_filename = v1_pattern.format(v1_prefix=v1_prefix)
+        v1_file = v1_protein_dir / v1_filename
+
+        # Check v1 file exists
         if not v1_file.exists():
-            result.add_missing_v1(filename)
+            result.add_missing_v1(v1_filename)
             continue
 
+        # If no v2 equivalent, just note v1 file exists
+        if v2_pattern is None:
+            result.add_match(f"{v1_filename} (v1 only)")
+            continue
+
+        v2_filename = v2_pattern.format(v2_prefix=v2_prefix)
+        v2_file = v2_dir / v2_filename
+
+        # Check v2 file exists
         if not v2_file.exists():
-            result.add_missing_v2(filename)
+            result.add_missing_v2(v2_filename)
             # Critical if v1 has output but v2 doesn't
-            result.add_difference(filename, 'MISSING_V2', f'File exists in v1 but not v2', critical=True)
+            result.add_difference(
+                v2_filename,
+                'MISSING_V2',
+                f'File exists in v1 ({v1_filename}) but not v2',
+                critical=True
+            )
             continue
 
         # Compare files
-        if any(pattern in filename for pattern in numeric_files):
+        is_numeric = any(ext in v2_filename for ext in numeric_files)
+        if is_numeric:
             is_match, diff = compare_numeric_files(v1_file, v2_file)
         else:
             is_match, diff = compare_text_files(v1_file, v2_file)
 
         if is_match:
-            result.add_match(filename)
+            result.add_match(f"{v1_filename} ↔ {v2_filename}")
         else:
             # Determine if critical based on diff type
             critical = (
                 'MISSING' in diff or
-                'Line count differs' in diff or
+                ('Line count differs' in diff and 'v1=0' not in diff and 'v2=0' not in diff) or
                 'Major differences' in diff
             )
-            result.add_difference(filename, 'CONTENT_DIFF', diff, critical=critical)
+            result.add_difference(
+                f"{v1_filename} ↔ {v2_filename}",
+                'CONTENT_DIFF',
+                diff,
+                critical=critical
+            )
 
     return result
 
@@ -355,11 +495,20 @@ def run_validation(
 
         # Compare each step
         print(f"\n[2] Comparing outputs with v1.0...")
+
+        # v1.0 outputs are in protein-specific subdirectory
+        v1_protein_dir = v1_dir / protein
+
+        if not v1_protein_dir.exists():
+            print(f"  ⚠️  v1.0 reference directory not found: {v1_protein_dir}")
+            print(f"  Skipping validation for {protein}")
+            continue
+
         for step_name in step_names:
             result = validate_step(
                 step_name,
                 protein,
-                v1_dir,
+                v1_protein_dir,
                 v2_dir,
                 numeric_patterns
             )
