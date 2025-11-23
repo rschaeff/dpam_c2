@@ -217,10 +217,11 @@ def run_step23(
             if len(parts) >= 8:
                 domain = parts[0]
                 ecod_id = parts[2]
+                quality = parts[5]
                 hh_range = parts[6]
                 dali_range = parts[7]
 
-                domain_ecod_to_mapping[(domain, ecod_id)] = (hh_range, dali_range)
+                domain_ecod_to_mapping[(domain, ecod_id)] = (hh_range, dali_range, quality)
 
     # Process domains (merged and single)
     results = []
@@ -266,13 +267,15 @@ def run_step23(
             hh_prob = pred['hh_prob']
             dali_zscore = pred['dali_zscore']
 
-            # Get template residues from mappings
+            # Get template residues from mappings and collect qualities
             template_resids = set()
+            qualities = []
 
             for domain in domains_in_group:
                 key = (domain, ecod)
                 if key in domain_ecod_to_mapping:
-                    hh_range, dali_range = domain_ecod_to_mapping[key]
+                    hh_range, dali_range, quality = domain_ecod_to_mapping[key]
+                    qualities.append(quality)
 
                     # Prefer DALI over HHsearch (longer alignment)
                     if dali_range != 'na':
@@ -282,6 +285,14 @@ def run_step23(
 
             if not template_resids:
                 continue
+
+            # Determine best quality (good > ok > bad)
+            if 'good' in qualities:
+                quality_value = 'good'
+            elif 'ok' in qualities:
+                quality_value = 'ok'
+            else:
+                quality_value = 'bad' if qualities else 'na'
 
             # Calculate coverage ratios
             ecod_length = ecod_lengths[ecod]
@@ -311,7 +322,7 @@ def run_step23(
             # Build candidate tuple
             candidate = (
                 classification, domain_list, merged_range, ecod, tgroup,
-                dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio
+                dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio, quality_value
             )
 
             # Keep best candidate of each type
@@ -326,11 +337,11 @@ def run_step23(
         best_candidate = best_full or best_part or best_miss
 
         if best_candidate:
-            classification, domain_list, merged_range, ecod, tgroup, dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio = best_candidate
+            classification, domain_list, merged_range, ecod, tgroup, dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio, quality = best_candidate
             results.append(
                 f"{classification}\t{domain_list}\t{merged_range}\t{ecod}\t{tgroup}\t"
                 f"{dpam_prob:.3f}\t{hh_prob:.3f}\t{dali_zscore:.3f}\t"
-                f"{weighted_ratio:.3f}\t{length_ratio:.3f}\tna"
+                f"{weighted_ratio:.3f}\t{length_ratio:.3f}\t{quality}"
             )
 
     # Process single (non-merged) domains
@@ -375,12 +386,13 @@ def run_step23(
             hh_prob = pred['hh_prob']
             dali_zscore = pred['dali_zscore']
 
-            # Get template residues
+            # Get template residues and quality
             key = (domain, ecod)
             template_resids = set()
+            quality_value = 'na'
 
             if key in domain_ecod_to_mapping:
-                hh_range, dali_range = domain_ecod_to_mapping[key]
+                hh_range, dali_range, quality_value = domain_ecod_to_mapping[key]
 
                 if dali_range != 'na':
                     template_resids.update(parse_range(dali_range))
@@ -418,7 +430,7 @@ def run_step23(
             # Build candidate tuple
             candidate = (
                 classification, domain, domain_range, ecod, tgroup,
-                dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio
+                dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio, quality_value
             )
 
             # Keep best candidate of each type
@@ -433,11 +445,11 @@ def run_step23(
         best_candidate = best_full or best_part or best_miss
 
         if best_candidate:
-            classification, domain, domain_range, ecod, tgroup, dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio = best_candidate
+            classification, domain, domain_range, ecod, tgroup, dpam_prob, hh_prob, dali_zscore, weighted_ratio, length_ratio, quality = best_candidate
             results.append(
                 f"{classification}\t{domain}\t{domain_range}\t{ecod}\t{tgroup}\t"
                 f"{dpam_prob:.3f}\t{hh_prob:.3f}\t{dali_zscore:.3f}\t"
-                f"{weighted_ratio:.3f}\t{length_ratio:.3f}\tna"
+                f"{weighted_ratio:.3f}\t{length_ratio:.3f}\t{quality}"
             )
 
     # Write results
