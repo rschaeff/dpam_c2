@@ -331,6 +331,17 @@ def parse_dssp_output(
         
         posi += 2  # Skip the '--' delimiter
     
+    # Fill in missing residues from sequence with default values
+    # This handles PDB files with missing residues
+    for i in range(1, len(sequence) + 1):
+        if i not in res2sse:
+            res2sse[i] = SecondaryStructure(
+                residue_id=i,
+                amino_acid=sequence[i-1],
+                sse_id=None,
+                sse_type='C'
+            )
+
     logger.debug(f"Parsed SSE for {len(res2sse)} residues, {sse_id} SSEs")
     return res2sse
 

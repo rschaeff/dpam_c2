@@ -88,8 +88,12 @@ class ExternalTool(ABC):
             'text': True,
         }
 
+        # Always preserve environment (especially conda env) unless explicitly overridden
         if env is not None:
             kwargs['env'] = env
+        else:
+            import os
+            kwargs['env'] = os.environ.copy()
         
         if log_file:
             log_file.parent.mkdir(parents=True, exist_ok=True)

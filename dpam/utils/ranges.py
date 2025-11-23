@@ -146,15 +146,20 @@ def filter_segments_by_length(
 def merge_overlapping_ranges(ranges: List[str]) -> str:
     """
     Merge overlapping or adjacent range strings.
-    
+
     Args:
         ranges: List of range strings
-    
+
     Returns:
         Merged range string
     """
     all_residues = set()
     for r in ranges:
         all_residues.update(range_to_residues(r))
-    
+
     return residues_to_range(sorted(all_residues))
+
+
+# Aliases for backward compatibility with v1.0 code
+parse_range = range_to_residues
+format_range = residues_to_range

@@ -234,11 +234,21 @@ def run_hhsearch_pipeline(
     # Determine database paths
     if uniref_db is None and database_dir is not None:
         # Legacy mode: construct from database_dir
-        uniref_db = database_dir / 'UniRef30_2022_02' / 'UniRef30_2022_02'
+        # Try 2023 version first (symlinked), fallback to 2022
+        uniref_2023 = database_dir / 'UniRef30_2023_02'
+        if (uniref_2023.parent / f'{uniref_2023.name}_cs219.ffdata').exists():
+            uniref_db = uniref_2023
+        else:
+            uniref_db = database_dir / 'UniRef30_2022_02' / 'UniRef30_2022_02'
 
     if pdb70_db is None and database_dir is not None:
         # Legacy mode: construct from database_dir
-        pdb70_db = database_dir / 'pdb70' / 'pdb70'
+        # Try symlinked version first
+        pdb70_direct = database_dir / 'pdb70'
+        if (pdb70_direct.parent / f'{pdb70_direct.name}_cs219.ffdata').exists():
+            pdb70_db = pdb70_direct
+        else:
+            pdb70_db = database_dir / 'pdb70' / 'pdb70'
 
     if uniref_db is None or pdb70_db is None:
         raise ValueError("Must provide either database_dir or both uniref_db and pdb70_db")

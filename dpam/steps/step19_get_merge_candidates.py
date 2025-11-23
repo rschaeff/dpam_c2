@@ -235,8 +235,9 @@ def run_step19(
                 tres2 = hit2['template_resids']
 
                 # Both must have high confidence (within 0.1 of their best)
-                if (prob1 + 0.1 < domain_to_best_prob[domain1] or
-                    prob2 + 0.1 < domain_to_best_prob[domain2]):
+                # Note: original uses > not >= for the threshold check
+                if not (prob1 + 0.1 > domain_to_best_prob[domain1] and
+                        prob2 + 0.1 > domain_to_best_prob[domain2]):
                     continue
 
                 # Template regions must cover different areas (< 25% overlap)
@@ -264,10 +265,11 @@ def run_step19(
         support_count = len(supporting_ecods)
 
         # Count ECODs opposing merge for domain1
+        # Original uses > for prob check and ratio check
         against1 = set()
         if domain1 in domain_to_hits:
             for hit in domain_to_hits[domain1]:
-                if (hit['prob'] + 0.1 >= domain_to_best_prob[domain1] and
+                if (hit['prob'] + 0.1 > domain_to_best_prob[domain1] and
                     hit['coverage'] > 0.5 and
                     hit['ecod'] not in supporting_ecods):
                     against1.add(hit['ecod'])
@@ -276,7 +278,7 @@ def run_step19(
         against2 = set()
         if domain2 in domain_to_hits:
             for hit in domain_to_hits[domain2]:
-                if (hit['prob'] + 0.1 >= domain_to_best_prob[domain2] and
+                if (hit['prob'] + 0.1 > domain_to_best_prob[domain2] and
                     hit['coverage'] > 0.5 and
                     hit['ecod'] not in supporting_ecods):
                     against2.add(hit['ecod'])

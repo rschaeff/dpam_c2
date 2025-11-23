@@ -183,7 +183,7 @@ class DPAMPipeline:
             return run_step5(prefix, self.working_dir, self.reference_data)
         
         elif step == PipelineStep.DALI_CANDIDATES:
-            from dpam.steps.step06_dali_candidates import run_step6
+            from dpam.steps.step06_get_dali_candidates import run_step6
             return run_step6(prefix, self.working_dir)
         
         elif step == PipelineStep.ITERATIVE_DALI:
@@ -213,7 +213,52 @@ class DPAMPipeline:
         elif step == PipelineStep.PARSE_DOMAINS:
             from dpam.steps.step13_parse_domains import run_step13
             return run_step13(prefix, self.working_dir)
-        
+
+        elif step == PipelineStep.PREPARE_DOMASS:
+            from dpam.steps.step15_prepare_domass import run_step15
+            return run_step15(prefix, self.working_dir, self.data_dir)
+
+        elif step == PipelineStep.RUN_DOMASS:
+            from dpam.steps.step16_run_domass import run_step16
+            return run_step16(prefix, self.working_dir, self.data_dir)
+
+        elif step == PipelineStep.GET_CONFIDENT:
+            from dpam.steps.step17_get_confident import run_step17
+            return run_step17(prefix, self.working_dir)
+
+        elif step == PipelineStep.GET_MAPPING:
+            from dpam.steps.step18_get_mapping import run_step18
+            return run_step18(prefix, self.working_dir, self.data_dir)
+
+        elif step == PipelineStep.GET_MERGE_CANDIDATES:
+            from dpam.steps.step19_get_merge_candidates import run_step19
+            return run_step19(prefix, self.working_dir, self.data_dir)
+
+        elif step == PipelineStep.EXTRACT_DOMAINS:
+            from dpam.steps.step20_extract_domains import run_step20
+            return run_step20(prefix, self.working_dir)
+
+        elif step == PipelineStep.COMPARE_DOMAINS:
+            from dpam.steps.step21_compare_domains import run_step21
+            return run_step21(prefix, self.working_dir)
+
+        elif step == PipelineStep.MERGE_DOMAINS:
+            from dpam.steps.step22_merge_domains import run_step22
+            return run_step22(prefix, self.working_dir)
+
+        elif step == PipelineStep.GET_PREDICTIONS:
+            from dpam.steps.step23_get_predictions import run_step23
+            return run_step23(prefix, self.working_dir, self.data_dir)
+
+        elif step == PipelineStep.INTEGRATE_RESULTS:
+            from dpam.steps.step24_integrate_results import run_step24
+            return run_step24(prefix, self.working_dir, self.data_dir)
+
+        elif step == PipelineStep.GENERATE_PDBS:
+            # Step 25 is optional visualization - skip for now
+            logger.warning(f"Step 25 (GENERATE_PDBS) not yet implemented - skipping")
+            return True
+
         else:
             logger.error(f"Unknown step: {step}")
             return False
