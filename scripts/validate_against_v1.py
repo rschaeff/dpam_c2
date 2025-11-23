@@ -97,7 +97,7 @@ STEP_FILES = {
     # v1.0 Steps 1-2 → dpam_c2 Step 1 (PREPARE)
     'PREPARE': {
         'v1': ['{v1_prefix}.fa', '{v1_prefix}.pdb'],
-        'v2': ['{v2_prefix}.fasta', '{v2_prefix}.pdb'],
+        'v2': ['{v2_prefix}.fa', '{v2_prefix}.pdb'],  # dpam_c2 uses .fa (same as v1)
     },
     # v1.0 Step 3 → dpam_c2 Step 2 (HHSEARCH)
     'HHSEARCH': {

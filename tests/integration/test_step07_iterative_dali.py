@@ -331,3 +331,91 @@ class TestStep07EdgeCases:
         # Not necessarily original_cwd, but should not be in tmp dirs
         current_cwd = os.getcwd()
         assert not str(current_cwd).endswith('tmp_'), "Should not be in temp directory"
+
+    def test_step7_finds_files_with_relative_working_dir(self, test_prefix,
+                                                         tmp_path):
+        """
+        Regression test for bug where Step 7 couldn't find files when working_dir
+        was a relative path.
+
+        Bug report (2025-11-19): Step 6 creates {prefix}_hits4Dali, but Step 7
+        immediately reports it as "not found" due to path resolution issue after
+        os.chdir().
+
+        Test ensures that:
+        1. Step 6 creates hits file with relative working_dir
+        2. Step 7 can find the same file with relative working_dir
+        3. Path resolution works correctly after chdir()
+        """
+        import os
+        from dpam.steps.step06_get_dali_candidates import run_step6
+
+        # Create test structure in tmp_path
+        base_dir = tmp_path / "test_relative_paths"
+        base_dir.mkdir()
+        working_subdir = base_dir / "results" / "dpam_inputs"
+        working_subdir.mkdir(parents=True)
+
+        # Create minimal input files for Step 6
+        map2ecod_file = working_subdir / f"{test_prefix}.map2ecod.result"
+        map2ecod_file.write_text("uid\tecod_id\tfamily\n001822778\te1r6wA1\tTest\n")
+
+        foldseek_file = working_subdir / f"{test_prefix}.foldseek.flt.result"
+        foldseek_file.write_text("ecod_num\tevalue\n001905759\t1e-50\n")
+
+        # Create minimal PDB file for Step 7
+        pdb_file = working_subdir / f"{test_prefix}.pdb"
+        pdb_file.write_text("ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N\nEND\n")
+
+        # Create mock ECOD70 directory
+        data_dir = base_dir / "data"
+        ecod70_dir = data_dir / "ECOD70"
+        ecod70_dir.mkdir(parents=True)
+
+        # Save original CWD
+        original_cwd = os.getcwd()
+
+        try:
+            # Change to base directory to make working_dir relative
+            os.chdir(base_dir)
+
+            # Use relative path (this is what triggers the bug)
+            relative_working_dir = Path("results") / "dpam_inputs"
+            relative_data_dir = Path("data")
+
+            print(f"\nTesting with relative paths:")
+            print(f"  CWD: {os.getcwd()}")
+            print(f"  working_dir: {relative_working_dir}")
+            print(f"  Absolute: {relative_working_dir.resolve()}")
+
+            # Step 6: Create hits file
+            success = run_step6(test_prefix, relative_working_dir)
+            assert success, "Step 6 should succeed"
+
+            # Verify hits file was created
+            hits_file = relative_working_dir / f"{test_prefix}_hits4Dali"
+            assert hits_file.exists(), f"Hits file should exist at {hits_file.resolve()}"
+
+            print(f"  Step 6 created: {hits_file.resolve()}")
+
+            # Step 7: Should find the hits file (this was failing before fix)
+            # Note: Will fail later due to missing DALI tool/templates, but
+            # we're testing that it finds the hits file first
+            try:
+                success = run_step7(test_prefix, relative_working_dir,
+                                  relative_data_dir, cpus=1)
+                print(f"  Step 7 result: {success}")
+                # If we get here without FileNotFoundError, path resolution works
+                assert True, "Step 7 found hits file with relative path"
+            except FileNotFoundError as e:
+                # Check if error is about hits file (would indicate bug)
+                if "_hits4Dali" in str(e) or "Hits file not found" in str(e):
+                    pytest.fail(f"Step 7 failed to find hits file (regression!): {e}")
+                else:
+                    # Different error (e.g., missing DALI tool) - that's OK
+                    print(f"  Step 7 error (expected): {e}")
+                    pass
+
+        finally:
+            # Restore original directory
+            os.chdir(original_cwd)

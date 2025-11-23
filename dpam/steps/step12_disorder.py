@@ -6,10 +6,11 @@ Predicts disordered regions based on:
 2. PAE matrix (inter-SSE contacts)
 3. Good domain residues (from step 10)
 
-Algorithm:
-- Find 5-residue windows with:
-  - Total inter-SSE contacts <= 5 (PAE < 6, seq separation >= 20)
-  - Hit residues <= 2 (residues in good domains)
+Algorithm (exact v1.0/dpam_automatic):
+- Find 10-residue sliding windows with:
+  - Total inter-SSE contacts <= 30 (PAE < 12, seq separation >= 10)
+  - Hit residues <= 5 (residues in good domains)
+- Mark all residues in qualifying windows as disordered
 
 Input:
     {prefix}.sse - SSE assignments from step 11
@@ -20,6 +21,7 @@ Output:
     {prefix}.diso - Disordered residue list
 
 Author: DPAM v2.0
+Reference: dpam_automatic/step13_get_diso.py
 """
 
 from pathlib import Path
@@ -155,9 +157,9 @@ def calculate_inter_sse_contacts(
     """
     Calculate inter-SSE contacts based on PAE.
 
-    Contact criteria:
-    - Sequence separation >= 20
-    - PAE < 6
+    Contact criteria (v1.0/dpam_automatic):
+    - Sequence separation >= 10
+    - PAE < 12
     - At least one residue in SSE
     - Residues in different SSEs (or one not in SSE)
 
@@ -177,16 +179,16 @@ def calculate_inter_sse_contacts(
             res1 = i + 1
             res2 = j + 1
 
-            # Check sequence separation
-            if res1 + 20 > res2:
+            # Check sequence separation (v1.0: >= 10)
+            if res1 + 10 > res2:
                 continue
 
-            # Check PAE
+            # Check PAE (v1.0: < 12)
             if res1 not in rpair2error or res2 not in rpair2error[res1]:
                 continue
 
             error = rpair2error[res1][res2]
-            if error >= 6:
+            if error >= 12:
                 continue
 
             # Check if res2 is in SSE
@@ -223,9 +225,9 @@ def find_disordered_regions(
     """
     Find disordered regions using sliding window.
 
-    Window criteria (5 residues):
-    - Total inter-SSE contacts <= 5
-    - Hit residues (in good domains) <= 2
+    Window criteria (v1.0/dpam_automatic - 10 residues):
+    - Total inter-SSE contacts <= 30
+    - Hit residues (in good domains) <= 5
 
     Args:
         length: Protein length
@@ -238,11 +240,11 @@ def find_disordered_regions(
     """
     diso_resids = set()
 
-    for start in range(1, length - 4):
+    for start in range(1, length - 9):
         total_contact = 0
         hitres_count = 0
 
-        for res in range(start, start + 5):
+        for res in range(start, start + 10):
             # Count hit residues
             if res in hit_resids:
                 hitres_count += 1
@@ -252,9 +254,9 @@ def find_disordered_regions(
                 if res in res2contacts:
                     total_contact += len(res2contacts[res])
 
-        # Apply criteria
-        if total_contact <= 5 and hitres_count <= 2:
-            for res in range(start, start + 5):
+        # Apply criteria (v1.0: contacts <= 30, hits <= 5)
+        if total_contact <= 30 and hitres_count <= 5:
+            for res in range(start, start + 10):
                 diso_resids.add(res)
 
     return diso_resids
@@ -316,7 +318,7 @@ def run_step12(
     logger.info(f"Calculated contacts for {len(res2contacts)} residues")
 
     # Find disordered regions
-    logger.info("Finding disordered regions (5-residue windows)")
+    logger.info("Finding disordered regions (10-residue windows)")
     diso_resids = find_disordered_regions(
         length, res2contacts, insses, hit_resids
     )

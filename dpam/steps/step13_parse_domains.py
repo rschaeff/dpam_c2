@@ -36,46 +36,50 @@ def get_PDB_prob(dist: float) -> float:
     """
     Convert PDB distance to probability.
 
-    Binned thresholds from v1.0.
+    Exact v1.0 thresholds (step13_parse_domains.py lines 24-69).
     """
     if dist <= 3:
         return 0.95
     elif dist <= 6:
         return 0.94
-    elif dist <= 8:
-        return 0.88
-    elif dist <= 10:
-        return 0.84
+    elif dist <= 9:
+        return 0.93
     elif dist <= 12:
-        return 0.79
-    elif dist <= 14:
-        return 0.74
-    elif dist <= 16:
-        return 0.69
+        return 0.91
+    elif dist <= 15:
+        return 0.89
     elif dist <= 18:
-        return 0.64
-    elif dist <= 20:
-        return 0.59
-    elif dist <= 25:
-        return 0.51
+        return 0.85
+    elif dist <= 21:
+        return 0.81
+    elif dist <= 24:
+        return 0.77
+    elif dist <= 27:
+        return 0.71
     elif dist <= 30:
-        return 0.43
+        return 0.66
     elif dist <= 35:
-        return 0.38
+        return 0.58
     elif dist <= 40:
-        return 0.34
+        return 0.48
+    elif dist <= 45:
+        return 0.40
     elif dist <= 50:
+        return 0.33
+    elif dist <= 55:
         return 0.28
     elif dist <= 60:
-        return 0.23
+        return 0.24
+    elif dist <= 70:
+        return 0.22
     elif dist <= 80:
-        return 0.18
-    elif dist <= 100:
-        return 0.14
-    elif dist <= 150:
-        return 0.1
+        return 0.20
+    elif dist <= 120:
+        return 0.19
+    elif dist <= 160:
+        return 0.15
     elif dist <= 200:
-        return 0.08
+        return 0.1
     else:
         return 0.06
 
@@ -84,46 +88,48 @@ def get_PAE_prob(error: float) -> float:
     """
     Convert PAE error to probability.
 
-    Binned thresholds from v1.0.
+    Exact v1.0 thresholds (step13_parse_domains.py lines 72-115).
     """
     if error <= 1:
         return 0.97
     elif error <= 2:
         return 0.89
     elif error <= 3:
-        return 0.83
+        return 0.77
     elif error <= 4:
-        return 0.78
+        return 0.67
     elif error <= 5:
-        return 0.74
+        return 0.61
     elif error <= 6:
-        return 0.7
+        return 0.57
     elif error <= 7:
-        return 0.66
+        return 0.54
     elif error <= 8:
-        return 0.62
+        return 0.52
     elif error <= 9:
-        return 0.59
+        return 0.50
     elif error <= 10:
-        return 0.56
+        return 0.48
+    elif error <= 11:
+        return 0.47
     elif error <= 12:
-        return 0.51
+        return 0.45
     elif error <= 14:
-        return 0.46
+        return 0.44
     elif error <= 16:
         return 0.42
     elif error <= 18:
-        return 0.38
+        return 0.41
     elif error <= 20:
-        return 0.35
+        return 0.39
     elif error <= 22:
-        return 0.31
+        return 0.37
     elif error <= 24:
-        return 0.27
+        return 0.32
     elif error <= 26:
-        return 0.23
+        return 0.25
     elif error <= 28:
-        return 0.19
+        return 0.16
     else:
         return 0.11
 
@@ -132,28 +138,22 @@ def get_HHS_prob(hhpro: float) -> float:
     """
     Convert HHsearch probability to probability.
 
-    Binned thresholds from v1.0.
+    Exact v1.0 thresholds (step13_parse_domains.py lines 118-135).
     """
     if hhpro >= 180:
         return 0.98
     elif hhpro >= 160:
-        return 0.96
+        return 0.94
     elif hhpro >= 140:
-        return 0.93
+        return 0.92
     elif hhpro >= 120:
-        return 0.89
+        return 0.88
+    elif hhpro >= 110:
+        return 0.87
     elif hhpro >= 100:
-        return 0.85
-    elif hhpro >= 90:
         return 0.81
-    elif hhpro >= 80:
-        return 0.77
-    elif hhpro >= 70:
-        return 0.72
-    elif hhpro >= 60:
-        return 0.66
     elif hhpro >= 50:
-        return 0.58
+        return 0.76
     else:
         return 0.5
 
@@ -162,30 +162,42 @@ def get_DALI_prob(daliz: float) -> float:
     """
     Convert DALI z-score to probability.
 
-    Binned thresholds from v1.0.
+    Exact v1.0 thresholds (step14_parse_domains.py lines 138-167).
     """
     if daliz >= 35:
-        return 0.98
-    elif daliz >= 30:
-        return 0.96
+        return 0.95
     elif daliz >= 25:
-        return 0.93
+        return 0.94
     elif daliz >= 20:
-        return 0.89
+        return 0.93
     elif daliz >= 18:
-        return 0.85
+        return 0.9
     elif daliz >= 16:
-        return 0.81
+        return 0.87
     elif daliz >= 14:
-        return 0.77
+        return 0.85
     elif daliz >= 12:
-        return 0.72
+        return 0.8
+    elif daliz >= 11:
+        return 0.77
     elif daliz >= 10:
-        return 0.66
+        return 0.74
+    elif daliz >= 9:
+        return 0.71
     elif daliz >= 8:
-        return 0.61
+        return 0.68
+    elif daliz >= 7:
+        return 0.63
     elif daliz >= 6:
-        return 0.55
+        return 0.60
+    elif daliz >= 5:
+        return 0.57
+    elif daliz >= 4:
+        return 0.54
+    elif daliz >= 3:
+        return 0.53
+    elif daliz >= 2:
+        return 0.52
     else:
         return 0.5
 
@@ -284,42 +296,31 @@ def calculate_distance(coords1: List[Tuple[float, float, float]],
 
 
 def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], List[float]],
-                                                        Dict[Tuple[int, int], List[float]],
-                                                        Dict[int, Set[str]]]:
+                                                        Dict[Tuple[int, int], List[float]]]:
     """
-    Load HHsearch and DALI scores from good domains, plus T-group assignments.
+    Load HHsearch and DALI scores from good domains.
+
+    v1.0-compatible: No T-group tracking (lines 279-344).
 
     Returns:
         hhs_scores: Dict mapping (res1, res2) -> list of HHsearch probs
         dali_scores: Dict mapping (res1, res2) -> list of DALI z-scores
-        res_tgroups: Dict mapping residue -> set of T-groups (e.g., {'192.10', '377.1'})
-                     ONLY includes residues with strong consensus (see apply_consensus_filter)
     """
     hhs_scores = {}
     dali_scores = {}
-    res_tgroup_counts = {}  # Temporary: track counts per residue
 
     if not gooddomains_file.exists():
-        return hhs_scores, dali_scores, {}
+        return hhs_scores, dali_scores
 
     with open(gooddomains_file, 'r') as f:
         for line in f:
             words = line.split()
 
             if words[0] == 'sequence':
-                # Sequence hit: tgroup in column 4, prob in column 5, range in column 8
-                tgroup = words[4]
+                # Sequence hit: prob in column 5, range in column 8
                 prob = float(words[5])
                 range_str = words[8]
                 resids = list(range_to_residues(range_str))
-
-                # Track T-group hit counts ONLY for high-quality hits (prob >= 90)
-                # This prevents contamination from weak/promiscuous alignments
-                if prob >= 90.0:
-                    for res in resids:
-                        if res not in res_tgroup_counts:
-                            res_tgroup_counts[res] = {}
-                        res_tgroup_counts[res][tgroup] = res_tgroup_counts[res].get(tgroup, 0) + 1
 
                 # Add HHsearch scores for all pairs
                 for i, res1 in enumerate(resids):
@@ -330,21 +331,10 @@ def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], Lis
                         hhs_scores[key].append(prob)
 
             elif words[0] == 'structure':
-                # Structure hit: quality in column 1, tgroup in column 6, zscore in column 7, bestprob in column 12, range in column 14
-                quality = words[1]
-                tgroup = words[6]
+                # Structure hit: zscore in column 7, range in column 14
                 zscore = float(words[7])
-                bestprob = float(words[12])
                 range_str = words[14]
                 resids = list(range_to_residues(range_str))
-
-                # Track T-group hit counts ONLY for "superb" quality DALI hits
-                # This prevents contamination from weak/promiscuous structural matches
-                if quality == 'superb':
-                    for res in resids:
-                        if res not in res_tgroup_counts:
-                            res_tgroup_counts[res] = {}
-                        res_tgroup_counts[res][tgroup] = res_tgroup_counts[res].get(tgroup, 0) + 1
 
                 # Add DALI scores for all pairs
                 for i, res1 in enumerate(resids):
@@ -354,74 +344,7 @@ def load_good_domains(gooddomains_file: Path) -> Tuple[Dict[Tuple[int, int], Lis
                             dali_scores[key] = []
                         dali_scores[key].append(zscore)
 
-                # Add HHsearch scores if sequence support exists
-                if bestprob > 0:
-                    for i, res1 in enumerate(resids):
-                        for res2 in resids[i+1:]:
-                            key = (res1, res2)
-                            if key not in hhs_scores:
-                                hhs_scores[key] = []
-                            hhs_scores[key].append(bestprob)
-
-    # Apply consensus filter to T-group assignments
-    res_tgroups = apply_consensus_filter(res_tgroup_counts)
-
-    return hhs_scores, dali_scores, res_tgroups
-
-
-def apply_consensus_filter(res_tgroup_counts: Dict[int, Dict[str, int]],
-                           min_ratio: float = 3.0,
-                           min_fraction: float = 0.75) -> Dict[int, Set[str]]:
-    """
-    Apply consensus filtering to T-group assignments.
-
-    Only assign a T-group to a residue if it has strong consensus:
-    - The dominant T-group has >= min_ratio times more hits than any other T-group (e.g., 3:1)
-    - OR the dominant T-group accounts for >= min_fraction of all hits (e.g., 75%)
-
-    This prevents overlap regions with mixed T-group assignments from creating
-    bridges that allow inappropriate merging.
-
-    Args:
-        res_tgroup_counts: Dict mapping residue -> {tgroup: hit_count}
-        min_ratio: Minimum ratio of dominant to second-most-common T-group
-        min_fraction: Minimum fraction of hits for dominant T-group
-
-    Returns:
-        Dict mapping residue -> set of T-groups (usually size 1 or 0)
-    """
-    res_tgroups = {}
-
-    for res, tgroup_counts in res_tgroup_counts.items():
-        if not tgroup_counts:
-            continue
-
-        # Sort T-groups by hit count
-        sorted_tgroups = sorted(tgroup_counts.items(), key=lambda x: x[1], reverse=True)
-        dominant_tgroup, dominant_count = sorted_tgroups[0]
-        total_hits = sum(tgroup_counts.values())
-
-        # Check consensus criteria
-        has_strong_consensus = False
-
-        # Criterion 1: High fraction of total hits
-        if dominant_count / total_hits >= min_fraction:
-            has_strong_consensus = True
-
-        # Criterion 2: Large ratio to second-most-common T-group
-        elif len(sorted_tgroups) > 1:
-            second_count = sorted_tgroups[1][1]
-            if dominant_count >= min_ratio * second_count:
-                has_strong_consensus = True
-        else:
-            # Only one T-group - automatic consensus
-            has_strong_consensus = True
-
-        # Assign only if strong consensus
-        if has_strong_consensus:
-            res_tgroups[res] = {dominant_tgroup}
-
-    return res_tgroups
+    return hhs_scores, dali_scores
 
 
 def aggregate_hhs_score(scores: List[float]) -> float:
@@ -550,7 +473,7 @@ def initial_segmentation(length: int, diso_resids: Set[int]) -> List[List[int]]:
     """
     Create initial 5-residue segments excluding disorder.
 
-    Keep segments with >= 3 residues.
+    Keep segments with >= 3 residues (v1.0 lines 446-456).
     """
     segments = []
 
@@ -566,177 +489,231 @@ def initial_segmentation(length: int, diso_resids: Set[int]) -> List[List[int]]:
     return segments
 
 
-def get_dominant_tgroup(segment: List[int], res_tgroups: Dict[int, Set[str]]) -> str:
-    """
-    Get the dominant T-group for a segment.
-
-    The dominant T-group is the one that appears in the most residues.
-    Returns None if no T-group assignments exist.
-    """
-    tgroup_counts = {}
-    for res in segment:
-        if res in res_tgroups:
-            for tgroup in res_tgroups[res]:
-                tgroup_counts[tgroup] = tgroup_counts.get(tgroup, 0) + 1
-
-    if not tgroup_counts:
-        return None
-
-    # Return the most common T-group
-    return max(tgroup_counts.items(), key=lambda x: x[1])[0]
-
-
-def segments_share_tgroup(seg1: List[int], seg2: List[int], res_tgroups: Dict[int, Set[str]]) -> bool:
-    """
-    Check if two segments have compatible T-group assignments.
-
-    CRITICAL (v1.0 behavior): Segments can only merge if they share the same DOMINANT T-group.
-    This prevents merging across domain boundaries.
-
-    STRICT CONSTRAINT: If either segment lacks a clear T-group assignment (failed consensus
-    filtering), do NOT allow T-group-based merging. This prevents unassigned boundary regions
-    from acting as "bridges" between different T-groups.
-    """
-    # Get dominant T-group for each segment
-    dominant1 = get_dominant_tgroup(seg1, res_tgroups)
-    dominant2 = get_dominant_tgroup(seg2, res_tgroups)
-
-    # STRICT: Require BOTH segments to have T-group assignments
-    # If either lacks assignment, they cannot merge based on T-group matching
-    # (These are likely boundary regions with mixed coverage)
-    if dominant1 is None or dominant2 is None:
-        return False
-
-    # Both have T-groups: require them to match
-    return dominant1 == dominant2
-
-
 def calculate_segment_pair_prob(seg1: List[int], seg2: List[int],
                                 prob_matrix: Dict[Tuple[int, int], float]) -> float:
-    """Calculate mean probability between two segments."""
+    """
+    Calculate mean probability between two segments.
+
+    CRITICAL (v1.0 line 489): Only count pairs with sequence separation >= 5.
+    This prevents nearby residues in sequence from inflating similarity scores.
+    """
     total = 0.0
     count = 0
 
     for res1 in seg1:
         for res2 in seg2:
-            total += get_prob(prob_matrix, res1, res2)
-            count += 1
+            # v1.0 filter: only count pairs separated by >= 5 residues
+            if res1 + 5 < res2 or res2 + 5 < res1:
+                total += get_prob(prob_matrix, res1, res2)
+                count += 1
 
     return total / count if count > 0 else 0.0
 
 
-def merge_segments_by_probability(segments: List[List[int]],
-                                  prob_matrix: Dict[Tuple[int, int], float],
-                                  res_tgroups: Dict[int, Set[str]]) -> List[List[int]]:
+def cluster_segments_v1(segments: List[List[int]],
+                        prob_matrix: Dict[Tuple[int, int], float]) -> List[List[int]]:
     """
-    Merge segments with mean probability > 0.54 AND shared T-group.
+    Cluster segments using exact v1.0 algorithm (lines 457-592).
 
-    CRITICAL (v1.0 behavior): Only merge segments that share at least one T-group.
-    This prevents merging across domain boundaries.
+    Key differences from previous implementation:
+    1. Pre-calculate all segment pair counts/totals
+    2. Sort pairs by mean probability (descending)
+    3. Single-pass merge with candidate cluster logic
 
-    Returns merged segments.
+    Returns clustered segments.
     """
-    merged = []
-    used = set()
+    import numpy as np
 
-    for i, seg1 in enumerate(segments):
-        if i in used:
-            continue
+    # Step 1: Pre-calculate segment pair statistics (v1.0 lines 457-498)
+    segment_probs = []
+    spair2count = {}
+    spair2total = {}
 
-        cluster = seg1[:]
-        used.add(i)
+    for i in range(len(segments)):
+        for j in range(len(segments)):
+            if i < j:
+                # Initialize counts
+                if i not in spair2count:
+                    spair2count[i] = {}
+                if i not in spair2total:
+                    spair2total[i] = {}
+                if j not in spair2count:
+                    spair2count[j] = {}
+                if j not in spair2total:
+                    spair2total[j] = {}
 
-        # Find all segments to merge with seg1
-        changed = True
-        while changed:
-            changed = False
-            for j, seg2 in enumerate(segments):
-                if j in used:
-                    continue
+                spair2count[i][j] = 0
+                spair2total[i][j] = 0
+                spair2count[j][i] = 0
+                spair2total[j][i] = 0
 
-                # Check both probability AND T-group compatibility
-                prob = calculate_segment_pair_prob(cluster, seg2, prob_matrix)
-                shares_tgroup = segments_share_tgroup(cluster, seg2, res_tgroups)
+                # Calculate probabilities with +5 filter
+                probs = []
+                for resi in segments[i]:
+                    for resj in segments[j]:
+                        if resi + 5 < resj:  # v1.0 line 489
+                            prob = get_prob(prob_matrix, resi, resj)
+                            spair2count[i][j] += 1
+                            spair2total[i][j] += prob
+                            spair2count[j][i] += 1
+                            spair2total[j][i] += prob
+                            probs.append(prob)
 
-                if prob > 0.54 and shares_tgroup:
-                    cluster.extend(seg2)
-                    used.add(j)
-                    changed = True
+                # Check threshold
+                if probs:
+                    meanprob = np.mean(probs)
+                    if meanprob > 0.64:  # v1.0 param1 (line 176)
+                        segment_probs.append([i, j, meanprob])
 
-        merged.append(sorted(cluster))
+    # Step 2: Sort by probability descending (v1.0 line 501)
+    segment_probs.sort(key=lambda x: x[2], reverse=True)
 
-    return merged
+    # Step 3: Iterative merging with candidate logic (v1.0 lines 502-592)
+    segments_V1 = []
+
+    for item in segment_probs:
+        segi = item[0]
+        segj = item[1]
+
+        if not segments_V1:
+            # First pair - create initial cluster
+            segments_V1.append(set([segi, segj]))
+        else:
+            isdone = 0
+            candidates = []
+
+            # Find which clusters contain segi or segj
+            for counts, segment in enumerate(segments_V1):
+                if segi in segment and segj in segment:
+                    isdone = 1  # Both already in same cluster
+                elif segi in segment:
+                    candidates.append(counts)
+                elif segj in segment:
+                    candidates.append(counts)
+
+            if not isdone:
+                if len(candidates) == 2:
+                    # Merging would join two existing clusters (v1.0 lines 520-557)
+                    c1 = candidates[0]
+                    c2 = candidates[1]
+
+                    # Calculate intra-cluster probabilities
+                    intra_count1 = 0
+                    intra_total1 = 0
+                    intra_count2 = 0
+                    intra_total2 = 0
+                    inter_count = 0
+                    inter_total = 0
+
+                    for i in segments_V1[c1]:
+                        for j in segments_V1[c1]:
+                            if i < j:
+                                intra_count1 += spair2count[i][j]
+                                intra_total1 += spair2total[i][j]
+
+                    for i in segments_V1[c2]:
+                        for j in segments_V1[c2]:
+                            if i < j:
+                                intra_count2 += spair2count[i][j]
+                                intra_total2 += spair2total[i][j]
+
+                    for i in segments_V1[c1]:
+                        for j in segments_V1[c2]:
+                            inter_count += spair2count[i][j]
+                            inter_total += spair2total[i][j]
+
+                    # Decide whether to merge (v1.0 lines 543-557)
+                    merge = 0
+                    if intra_count1 <= 20 or intra_count2 <= 20:
+                        merge = 1
+                    else:
+                        intra_prob1 = intra_total1 / intra_count1 if intra_count1 > 0 else 0
+                        intra_prob2 = intra_total2 / intra_count2 if intra_count2 > 0 else 0
+                        inter_prob = inter_total / inter_count if inter_count > 0 else 0
+                        if inter_prob * 1.1 >= intra_prob1 or inter_prob * 1.1 >= intra_prob2:
+                            merge = 1
+
+                    if merge:
+                        # Merge the two clusters
+                        new_segments = []
+                        new_segment = set()
+                        for counts, segment in enumerate(segments_V1):
+                            if counts in candidates:
+                                new_segment = new_segment.union(segment)
+                            else:
+                                new_segments.append(segment)
+                        new_segments.append(new_segment)
+                        segments_V1 = new_segments
+
+                elif len(candidates) == 1:
+                    # Add to existing cluster (v1.0 lines 559-588)
+                    c0 = candidates[0]
+
+                    # Calculate probabilities
+                    intra_count = 0
+                    intra_total = 0
+                    inter_count = 0
+                    inter_total = 0
+
+                    for i in segments_V1[c0]:
+                        for j in segments_V1[c0]:
+                            if i < j:
+                                intra_count += spair2count[i][j]
+                                intra_total += spair2total[i][j]
+
+                    if segi in segments_V1[c0]:
+                        for k in segments_V1[c0]:
+                            if segj != k:
+                                inter_count += spair2count[k][segj]
+                                inter_total += spair2total[k][segj]
+                    elif segj in segments_V1[c0]:
+                        for k in segments_V1[c0]:
+                            if segi != k:
+                                inter_count += spair2count[k][segi]
+                                inter_total += spair2total[k][segi]
+
+                    # Decide whether to merge (v1.0 lines 582-587)
+                    merge = 0
+                    if intra_total <= 20:
+                        merge = 1
+                    else:
+                        intra_prob = intra_total / intra_count if intra_count > 0 else 0
+                        inter_prob = inter_total / inter_count if inter_count > 0 else 0
+                        if inter_prob * 1.1 >= intra_prob:
+                            merge = 1
+
+                    if merge:
+                        segments_V1[c0].add(segi)
+                        segments_V1[c0].add(segj)
+
+                elif len(candidates) == 0:
+                    # Create new cluster (v1.0 line 590)
+                    segments_V1.append(set([segi, segj]))
+
+    # Step 4: Convert sets of indices back to lists of residues (v1.0 lines 594-603)
+    sorted_segments = []
+    for item in segments_V1:
+        resids = []
+        for segind in item:
+            for res in segments[segind]:
+                resids.append(res)
+        resids.sort()
+        if resids:
+            sorted_segments.append([resids, np.mean(resids)])
+
+    sorted_segments.sort(key=lambda x: x[1])
+
+    # Return just the residue lists
+    return [item[0] for item in sorted_segments]
 
 
-def calculate_intra_prob(segment: List[int], prob_matrix: Dict[Tuple[int, int], float]) -> float:
-    """Calculate mean intra-segment probability."""
-    if len(segment) <= 1:
-        return 1.0
-
-    total = 0.0
-    count = 0
-
-    for i, res1 in enumerate(segment):
-        for res2 in segment[i+1:]:
-            total += get_prob(prob_matrix, res1, res2)
-            count += 1
-
-    return total / count if count > 0 else 0.0
-
-
-def iterative_clustering(segments: List[List[int]],
-                        prob_matrix: Dict[Tuple[int, int], float],
-                        res_tgroups: Dict[int, Set[str]]) -> List[List[int]]:
+def fill_gaps(domains: List[List[int]], domain_resids: set) -> List[List[int]]:
     """
-    Iteratively merge segments based on intra vs inter probability AND T-group compatibility.
+    Fill gaps between segments based on original v1.0 logic (lines 540-559).
 
-    CRITICAL (v1.0 behavior): Only merge if:
-    1. inter_prob * 1.07 >= min(intra1, intra2)
-    2. Segments share at least one T-group
-
-    This prevents merging across domain boundaries.
-    """
-    clusters = [seg[:] for seg in segments]
-
-    changed = True
-    while changed:
-        changed = False
-
-        # Calculate intra probabilities
-        intra_probs = [calculate_intra_prob(c, prob_matrix) for c in clusters]
-
-        # Find best merge candidate
-        best_i, best_j = -1, -1
-        best_ratio = 0.0
-
-        for i in range(len(clusters)):
-            for j in range(i + 1, len(clusters)):
-                # Check T-group compatibility first
-                if not segments_share_tgroup(clusters[i], clusters[j], res_tgroups):
-                    continue
-
-                inter_prob = calculate_segment_pair_prob(clusters[i], clusters[j], prob_matrix)
-                min_intra = min(intra_probs[i], intra_probs[j])
-
-                if inter_prob * 1.07 >= min_intra:
-                    ratio = inter_prob / min_intra if min_intra > 0 else float('inf')
-                    if ratio > best_ratio:
-                        best_ratio = ratio
-                        best_i, best_j = i, j
-
-        # Merge if candidate found
-        if best_i >= 0:
-            merged = sorted(clusters[best_i] + clusters[best_j])
-            clusters = [c for idx, c in enumerate(clusters) if idx not in (best_i, best_j)]
-            clusters.append(merged)
-            changed = True
-
-    return clusters
-
-
-def fill_gaps(domains: List[List[int]], gap_tolerance: int = 10) -> List[List[int]]:
-    """
-    Fill gaps <= gap_tolerance between residues in each domain.
+    Gap filling rules:
+    - Always fill gaps <= 10 residues
+    - Fill gaps <= 20 residues if <= 10 belong to other domains
 
     Domain refinement v0 -> v1.
     """
@@ -746,50 +723,101 @@ def fill_gaps(domains: List[List[int]], gap_tolerance: int = 10) -> List[List[in
         if not domain:
             continue
 
-        sorted_res = sorted(domain)
-        new_domain = [sorted_res[0]]
-
-        for res in sorted_res[1:]:
-            # Fill gap if <= tolerance
-            if res - new_domain[-1] <= gap_tolerance + 1:
-                for fill_res in range(new_domain[-1] + 1, res + 1):
-                    if fill_res not in new_domain:
-                        new_domain.append(fill_res)
+        # Split into consecutive segments
+        segs = []
+        for res in domain:
+            if not segs:
+                segs.append([res])
+            elif res == segs[-1][-1] + 1:
+                segs[-1].append(res)
             else:
-                new_domain.append(res)
+                segs.append([res])
 
-        filled.append(sorted(new_domain))
+        # Fill gaps based on v1.0 logic
+        if len(segs) > 1:
+            newdomain = []
+            for counts, seg in enumerate(segs):
+                if counts == 0:
+                    # First segment - add all residues
+                    for residue in seg:
+                        newdomain.append(residue)
+                else:
+                    # Subsequent segments - check gap
+                    lastseg = segs[counts - 1]
+                    interseg = range(lastseg[-1] + 1, seg[0])
+
+                    count_all = len(interseg)
+                    count_other = sum(1 for residue in interseg if residue in domain_resids)
+                    count_good = count_all - count_other
+
+                    getit = 0
+                    if count_all <= 10:
+                        getit = 1
+                    elif count_all <= 20 and count_other <= 10:
+                        getit = 1
+
+                    if getit:
+                        # Fill gap
+                        for residue in interseg:
+                            newdomain.append(residue)
+
+                    # Add segment
+                    for residue in seg:
+                        newdomain.append(residue)
+            filled.append(newdomain)
+        else:
+            # Single segment - no gaps to fill
+            filled.append(segs[0])
 
     return filled
 
 
-def remove_overlaps(domains: List[List[int]], min_unique: int = 15) -> List[List[int]]:
+def remove_overlaps(domains: List[List[int]]) -> List[List[int]]:
     """
     Remove overlaps between domains.
 
-    Keep segments with >= min_unique residues not in other domains.
+    v1.0-compatible (lines 594-606): For each domain, remove segments
+    where < 10 residues are unique (not in other domains).
+    Keep domains with >= 25 total residues.
+
     Domain refinement v1 -> v2.
     """
-    # Find all overlapping residues
-    all_resids = []
-    for domain in domains:
-        all_resids.extend(domain)
-
-    overlap_resids = set()
-    seen = set()
-    for res in all_resids:
-        if res in seen:
-            overlap_resids.add(res)
-        seen.add(res)
-
-    # Remove overlaps from each domain
     cleaned = []
-    for domain in domains:
-        unique_resids = [res for res in domain if res not in overlap_resids]
 
-        if len(unique_resids) >= min_unique:
-            # Keep full domain with overlaps removed
-            cleaned.append(unique_resids)
+    for counti, itemi in enumerate(domains):
+        domain = itemi
+
+        # Find residues in other domains
+        other_resids = set()
+        for countj, itemj in enumerate(domains):
+            if counti != countj:
+                for res in itemj:
+                    other_resids.add(res)
+
+        # Split into consecutive segments
+        segs = []
+        for res in domain:
+            if not segs:
+                segs.append([res])
+            elif res == segs[-1][-1] + 1:
+                segs[-1].append(res)
+            else:
+                segs.append([res])
+
+        # Keep segments with >= 10 unique residues
+        newdomain = []
+        for seg in segs:
+            count_good = 0
+            for resid in seg:
+                if resid not in other_resids:
+                    count_good += 1
+            if count_good >= 10:
+                for resid in seg:
+                    newdomain.append(resid)
+
+        # Keep domain if >= 25 total residues (v1.0 line 606)
+        if len(newdomain) >= 25:
+            cleaned.append(newdomain)
 
     return cleaned
 
@@ -844,11 +872,10 @@ def run_step13(prefix: str, working_dir: Path) -> bool:
     logger.info("Loading PAE matrix")
     rpair2error = load_pae_matrix(json_file)
 
-    # Load good domains scores and T-group assignments
-    logger.info("Loading good domain scores and T-group assignments")
-    hhs_scores, dali_scores, res_tgroups = load_good_domains(gooddomains_file)
+    # Load good domain scores
+    logger.info("Loading good domain scores")
+    hhs_scores, dali_scores = load_good_domains(gooddomains_file)
     logger.info(f"HHsearch pairs: {len(hhs_scores)}, DALI pairs: {len(dali_scores)}")
-    logger.info(f"Residues with T-group assignments: {len(res_tgroups)}")
 
     # Calculate probability matrix
     logger.info("Calculating probability matrix")
@@ -862,30 +889,31 @@ def run_step13(prefix: str, working_dir: Path) -> bool:
     segments = initial_segmentation(length, diso_resids)
     logger.info(f"Initial segments: {len(segments)}")
 
-    # Merge by probability AND T-group compatibility
-    logger.info("Merging segments by probability (threshold > 0.54) and T-group compatibility")
-    merged = merge_segments_by_probability(segments, prob_matrix, res_tgroups)
-    logger.info(f"Merged to {len(merged)} segments")
-
-    # Iterative clustering with T-group constraints
-    logger.info("Iterative clustering (intra/inter threshold 1.07) with T-group constraints")
-    clusters = iterative_clustering(merged, prob_matrix, res_tgroups)
+    # Cluster segments using exact v1.0 algorithm
+    logger.info("Clustering segments (v1.0 algorithm: prob > 0.64, ratio 1.1)")
+    clusters = cluster_segments_v1(segments, prob_matrix)
     logger.info(f"Clustered to {len(clusters)} domains")
 
     # Domain refinement v0: filter by length
     domains_v0 = filter_by_length(clusters, min_length=20)
     logger.info(f"Domains v0 (>= 20 residues): {len(domains_v0)}")
 
-    # Domain refinement v1: fill gaps
-    domains_v1 = fill_gaps(domains_v0, gap_tolerance=10)
+    # Build set of all domain residues for gap filling
+    domain_resids = set()
+    for domain in domains_v0:
+        for res in domain:
+            domain_resids.add(res)
+
+    # Domain refinement v1: fill gaps (<=10 always, <=20 if <=10 in other domains)
+    domains_v1 = fill_gaps(domains_v0, domain_resids)
     logger.info(f"Domains v1 (gaps filled): {len(domains_v1)}")
 
-    # Domain refinement v2: remove overlaps
-    domains_v2 = remove_overlaps(domains_v1, min_unique=15)
+    # Domain refinement v2: remove overlaps (keep segments >=10 unique, domains >=25 total)
+    domains_v2 = remove_overlaps(domains_v1)
     logger.info(f"Domains v2 (overlaps removed): {len(domains_v2)}")
 
-    # Final filter
-    final_domains = filter_by_length(domains_v2, min_length=20)
+    # Final domains (no additional filtering - remove_overlaps already applies >=25 threshold)
+    final_domains = domains_v2
     logger.info(f"Final domains: {len(final_domains)}")
 
     # Write output (two filenames for compatibility)

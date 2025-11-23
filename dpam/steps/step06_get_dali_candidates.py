@@ -15,16 +15,16 @@ logger = get_logger('steps.dali_candidates')
 
 def read_domains_from_map_ecod(file_path: Path) -> Set[str]:
     """
-    Read ECOD domain IDs from map2ecod.result file.
+    Read ECOD domain UIDs from map2ecod.result file.
 
-    Reads the ecod_domain_id column (second column) to get domain IDs
-    like 'e2rspA1' for use as DALI template names.
+    Reads the uid column (first column) to get numeric ECOD IDs
+    like '001822778' that correspond to PDB filenames in ECOD70/.
 
     Args:
         file_path: Path to map2ecod.result
 
     Returns:
-        Set of ECOD domain IDs (e.g., 'e2rspA1')
+        Set of ECOD UIDs (e.g., '001822778')
     """
     domains = set()
 
@@ -38,9 +38,9 @@ def read_domains_from_map_ecod(file_path: Path) -> Set[str]:
                 continue
 
             words = line.split()
-            if len(words) >= 2:
-                ecod_id = words[1]  # Second column: ecod_domain_id
-                domains.add(ecod_id)
+            if len(words) >= 1:
+                uid = words[0]  # First column: uid (numeric ECOD ID)
+                domains.add(uid)
 
     logger.debug(f"Read {len(domains)} domains from map2ecod")
     return domains

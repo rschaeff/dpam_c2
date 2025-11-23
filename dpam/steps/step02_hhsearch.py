@@ -37,6 +37,11 @@ def run_step2(
     logger.info(f"=== Step 2: HHsearch for {prefix} ===")
 
     try:
+        # Convert to absolute paths
+        working_dir = working_dir.resolve()
+        if data_dir:
+            data_dir = data_dir.resolve()
+
         fasta_file = working_dir / f'{prefix}.fa'
         output_prefix = working_dir / prefix
 

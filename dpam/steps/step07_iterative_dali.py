@@ -87,13 +87,17 @@ def run_dali(args: Tuple) -> bool:
     """
     prefix, edomain, working_dir, data_dir = args
     
-    # Setup paths
-    query_pdb = working_dir / f'{prefix}.pdb'
-    template_pdb = data_dir / 'ECOD70' / f'{edomain}.pdb'
-    
-    # Check template exists
-    if not template_pdb.exists():
-        logger.warning(f"Template not found: {template_pdb}")
+    # Setup paths - use absolute paths to avoid directory confusion
+    query_pdb = (working_dir / f'{prefix}.pdb').resolve()
+    template_pdb_source = (data_dir / 'ECOD70' / f'{edomain}.pdb').resolve()
+
+    # Check files exist
+    if not query_pdb.exists():
+        logger.error(f"Query PDB not found: {query_pdb}")
+        return False
+
+    if not template_pdb_source.exists():
+        logger.warning(f"Template not found: {template_pdb_source}")
         return False
     
     # Create working directories - match v1.0 structure
@@ -105,10 +109,14 @@ def run_dali(args: Tuple) -> bool:
     
     output_tmp_dir = tmp_dir / 'output_tmp'
     output_tmp_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Copy query PDB with v1.0 naming
-    work_pdb = tmp_dir / f'{prefix}_{edomain}.pdb'
+
+    # Copy query PDB with v1.0 naming - use absolute path
+    work_pdb = (tmp_dir / f'{prefix}_{edomain}.pdb').resolve()
     shutil.copy(query_pdb, work_pdb)
+
+    # CRITICAL: Copy template locally to avoid DaliLite 80-char path limit
+    template_pdb = (tmp_dir / f'{edomain}.pdb').resolve()
+    shutil.copy(template_pdb_source, template_pdb)
     
     # Output file for this domain
     output_file = iterative_dir / f'{prefix}_{edomain}_hits'
@@ -120,13 +128,10 @@ def run_dali(args: Tuple) -> bool:
     alicount = 0
     
     # Iterative DALI loop - EXACTLY matches v1.0
-    while True:
-        # Change to output directory (DALI requirement)
-        original_cwd = os.getcwd()
-        os.chdir(output_tmp_dir)
-        
-        try:
-            # Run DALI alignment
+    try:
+        while True:
+            # Run DALI alignment (absolute paths, so no need to change directory)
+            # DALI will change to output_tmp_dir internally via cwd parameter
             z_score, alignments = dali.align(
                 work_pdb,
                 template_pdb,
@@ -134,91 +139,92 @@ def run_dali(args: Tuple) -> bool:
                 dat1_dir=Path('./'),
                 dat2_dir=Path('./')
             )
-        finally:
-            os.chdir(original_cwd)
-        
-        if z_score is None or len(alignments) < 20:
-            logger.debug(f"No significant alignment for {edomain} (z={z_score}, n={len(alignments) if alignments else 0})")
-            break
-        
-        # Read current query residues
-        with open(work_pdb, 'r') as f:
-            Qresids_set = set()
-            for line in f:
-                if line.startswith('ATOM'):
-                    resid = int(line[22:26])
-                    Qresids_set.add(resid)
-        
-        Qresids = sorted(Qresids_set)
-        qlen = len(Qresids)
-        slen = 0  # Template length (not needed in v1.0)
-        match = len(alignments)
-        
-        # Record hit
-        alicount += 1
-        with open(output_file, 'a') as f:
-            f.write(f'>{edomain}_{alicount}\t{z_score}\t{match}\t{qlen}\t{slen}\n')
-            for qind, tind in alignments:
-                # Convert alignment index (1-based) to actual residue ID
-                actual_qresid = Qresids[qind - 1]
-                f.write(f'{actual_qresid}\t{tind}\n')
-        
-        logger.debug(f"{edomain}_{alicount}: z={z_score:.2f}, n={match}, q_len={qlen}")
-        
-        # Calculate range of aligned residues with gap tolerance
-        raw_qresids = [Qresids[q - 1] for q, t in alignments]
-        qrange = get_domain_range(raw_qresids)
-        
-        # Expand range to remove (includes gaps)
-        qresids_to_remove = set()
-        qsegs = qrange.split(',')
-        for qseg in qsegs:
-            qedges = qseg.split('-')
-            qstart = int(qedges[0])
-            qend = int(qedges[1])
-            for qres in range(qstart, qend + 1):
-                qresids_to_remove.add(qres)
-        
-        # Calculate remaining residues
-        remain_resids = Qresids_set - qresids_to_remove
-        
-        if len(remain_resids) < 20:
-            logger.debug(f"{edomain}: Insufficient residues remaining ({len(remain_resids)})")
-            # Clean output directory before breaking
-            if os.getcwd() == str(output_tmp_dir):
-                os.chdir(working_dir)
+
+            logger.debug(f"{edomain}: DALI returned z={z_score}, alignments={len(alignments) if alignments else 0}")
+
+            if z_score is None or len(alignments) < 20:
+                logger.debug(f"No significant alignment for {edomain} (z={z_score}, n={len(alignments) if alignments else 0})")
+                break
+
+            # Read current query residues
+            with open(work_pdb, 'r') as f:
+                Qresids_set = set()
+                for line in f:
+                    if line.startswith('ATOM'):
+                        resid = int(line[22:26])
+                        Qresids_set.add(resid)
+
+            Qresids = sorted(Qresids_set)
+            qlen = len(Qresids)
+            slen = 0  # Template length (not needed in v1.0)
+            match = len(alignments)
+
+            # Record hit
+            alicount += 1
+            with open(output_file, 'a') as f:
+                f.write(f'>{edomain}_{alicount}\t{z_score}\t{match}\t{qlen}\t{slen}\n')
+                for qind, tind in alignments:
+                    # Convert alignment index (1-based) to actual residue ID
+                    actual_qresid = Qresids[qind - 1]
+                    f.write(f'{actual_qresid}\t{tind}\n')
+
+            logger.debug(f"{edomain}_{alicount}: z={z_score:.2f}, n={match}, q_len={qlen}")
+
+            # Calculate range of aligned residues with gap tolerance
+            raw_qresids = [Qresids[q - 1] for q, t in alignments]
+            qrange = get_domain_range(raw_qresids)
+
+            # Expand range to remove (includes gaps)
+            qresids_to_remove = set()
+            qsegs = qrange.split(',')
+            for qseg in qsegs:
+                qedges = qseg.split('-')
+                qstart = int(qedges[0])
+                qend = int(qedges[1])
+                for qres in range(qstart, qend + 1):
+                    qresids_to_remove.add(qres)
+
+            # Calculate remaining residues
+            remain_resids = Qresids_set - qresids_to_remove
+
+            if len(remain_resids) < 20:
+                logger.debug(f"{edomain}: Insufficient residues remaining ({len(remain_resids)})")
+                # Clean output directory before breaking
+                for f in output_tmp_dir.glob('*'):
+                    if f.is_file():
+                        f.unlink()
+                break
+
+            # Write new PDB with only remaining residues
+            with open(tmp_dir / f'{prefix}_{edomain}.pdb', 'r') as fin:
+                with open(tmp_dir / f'{prefix}_{edomain}.pdbnew', 'w') as fout:
+                    for line in fin:
+                        if line.startswith('ATOM'):
+                            resid = int(line[22:26])
+                            if resid in remain_resids:
+                                fout.write(line)
+
+            # Replace working PDB
+            shutil.move(
+                str(tmp_dir / f'{prefix}_{edomain}.pdbnew'),
+                str(tmp_dir / f'{prefix}_{edomain}.pdb')
+            )
+
+            # Clean output directory for next iteration
             for f in output_tmp_dir.glob('*'):
                 if f.is_file():
                     f.unlink()
-            break
-        
-        # Write new PDB with only remaining residues
-        with open(tmp_dir / f'{prefix}_{edomain}.pdb', 'r') as fin:
-            with open(tmp_dir / f'{prefix}_{edomain}.pdbnew', 'w') as fout:
-                for line in fin:
-                    if line.startswith('ATOM'):
-                        resid = int(line[22:26])
-                        if resid in remain_resids:
-                            fout.write(line)
-        
-        # Replace working PDB
-        shutil.move(
-            str(tmp_dir / f'{prefix}_{edomain}.pdbnew'),
-            str(tmp_dir / f'{prefix}_{edomain}.pdb')
-        )
-        
-        # Clean output directory for next iteration
-        if os.getcwd() == str(output_tmp_dir):
-            os.chdir(working_dir)
-        for f in output_tmp_dir.glob('*'):
-            if f.is_file():
-                f.unlink()
-    
-    # Clean up temporary directory (match v1.0)
-    os.chdir(working_dir)
-    time.sleep(1)  # v1.0 has this to prevent race conditions
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    
+
+    except Exception as e:
+        logger.error(f"{edomain}: Exception in iterative DALI loop: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    finally:
+        # Clean up temporary directory (match v1.0)
+        time.sleep(0.1)  # Small delay to ensure file handles are released
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
     return alicount > 0
 
 
@@ -244,28 +250,39 @@ def run_step7(
         True if successful
     """
     logger.info(f"=== Step 7: Iterative DALI for {prefix} ===")
-    
+
+    # Convert paths to absolute to avoid relative path issues after chdir
+    working_dir = Path(working_dir).resolve()
+    data_dir = Path(data_dir).resolve()
+
     # Change to working directory (v1.0 does this)
     original_cwd = os.getcwd()
     if os.getcwd() != str(working_dir):
         os.chdir(working_dir)
-    
+
     try:
-        # Check if already done
+        # Check if already done - use absolute path
         done_file = working_dir / f'{prefix}.iterativeDali.done'
         if done_file.exists():
             logger.info(f"Step 7 already completed for {prefix}")
             return True
-        
-        # Create output directory
+
+        # Create output directory - use absolute path
         iterative_dir = working_dir / f'iterativeDali_{prefix}'
         if not iterative_dir.exists():
             iterative_dir.mkdir(parents=True)
-        
-        # Read ECOD domain candidates from step 6
+
+        # Read ECOD domain candidates from step 6 - use absolute path
         hits_file = working_dir / f'{prefix}_hits4Dali'
+
+        # Debug logging to help diagnose path issues
+        logger.debug(f"Looking for hits file: {hits_file}")
+        logger.debug(f"File exists: {hits_file.exists()}")
+        logger.debug(f"Current working directory: {os.getcwd()}")
+
         if not hits_file.exists():
             logger.error(f"Hits file not found: {hits_file}")
+            logger.error(f"Current directory contents: {list(Path('.').glob(f'{prefix}*'))}")
             return False
         
         with open(hits_file, 'r') as f:
@@ -291,11 +308,11 @@ def run_step7(
                     outf.write(inf.read())
         
         logger.info(f"Wrote combined hits to {final_file}")
-        
+
         # Clean up temporary directories (match v1.0)
         for tmp_dir in iterative_dir.glob('tmp_*'):
             shutil.rmtree(tmp_dir, ignore_errors=True)
-        
+
         # Remove main iterative directory (match v1.0)
         shutil.rmtree(iterative_dir, ignore_errors=True)
         

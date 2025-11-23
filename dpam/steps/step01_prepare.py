@@ -67,34 +67,66 @@ def extract_sequence(
             logger.error(f"Failed to extract from CIF: {e}")
             raise StructurePreparationError(f"CIF extraction failed: {e}")
     
-    # Try PDB with external tool
+    # Try PDB with external tool or gemmi fallback
     elif pdb_file.exists():
+        # Try pdb2fasta.pl from HH-suite first
+        pdb2fasta_paths = [
+            'pdb2fasta',
+            '/sw/apps/hh-suite/scripts/pdb2fasta.pl'
+        ]
+
+        for pdb2fasta_cmd in pdb2fasta_paths:
+            try:
+                result = subprocess.run(
+                    [pdb2fasta_cmd, str(pdb_file)],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+
+                # Parse output and fix header
+                lines = result.stdout.strip().split('\n')
+                if lines and lines[0].startswith('>'):
+                    header = lines[0].split(':')[0]
+                    sequence = ''.join(lines[1:])
+                    write_fasta(fasta_file, prefix, sequence)
+                    logger.info(f"Extracted sequence from PDB: {len(sequence)} residues")
+                    return True
+                else:
+                    raise StructurePreparationError("Invalid pdb2fasta output")
+
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"pdb2fasta failed with {pdb2fasta_cmd}: {e}")
+                continue
+            except FileNotFoundError:
+                continue
+
+        # Fallback: use gemmi to read PDB and extract sequence
+        logger.info("Using gemmi fallback for PDB sequence extraction")
         try:
-            # Use pdb2fasta if available
-            result = subprocess.run(
-                ['pdb2fasta', str(pdb_file)],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            
-            # Parse output and fix header
-            lines = result.stdout.strip().split('\n')
-            if lines and lines[0].startswith('>'):
-                header = lines[0].split(':')[0]
-                sequence = ''.join(lines[1:])
-                write_fasta(fasta_file, prefix, sequence)
-                logger.info(f"Extracted sequence from PDB: {len(sequence)} residues")
-                return True
+            import gemmi
+            structure = gemmi.read_structure(str(pdb_file))
+
+            # Access via model[0] -> chain[0], not structure.chains
+            if len(structure) > 0:
+                model = structure[0]
+                if len(model) > 0:
+                    chain = model[0]
+                    # Extract sequence using gemmi.find_tabulated_residue
+                    sequence = ''.join([
+                        gemmi.find_tabulated_residue(r.name).one_letter_code
+                        for r in chain
+                    ])
+                    write_fasta(fasta_file, prefix, sequence)
+                    logger.info(f"Extracted sequence from PDB (gemmi): {len(sequence)} residues")
+                    return True
+                else:
+                    raise StructurePreparationError("No chains found in model")
             else:
-                raise StructurePreparationError("Invalid pdb2fasta output")
-        
-        except subprocess.CalledProcessError as e:
-            logger.error(f"pdb2fasta failed: {e}")
+                raise StructurePreparationError("No models found in PDB")
+        except Exception as e:
+            logger.error(f"Gemmi PDB extraction failed: {e}")
             raise StructurePreparationError(f"PDB extraction failed: {e}")
-        except FileNotFoundError:
-            logger.error("pdb2fasta not found in PATH")
-            raise StructurePreparationError("pdb2fasta not available")
     
     else:
         raise StructurePreparationError("No structure file found (.cif or .pdb)")
@@ -172,10 +204,11 @@ def standardize_structure(
                 error_msg = f"PDB sequence mismatch for {prefix}"
                 logger.error(error_msg)
                 raise StructurePreparationError(error_msg)
-            
-            # Rewrite PDB (standardizes format)
-            write_pdb(pdb_file, structure, truncate_coords=True)
-            logger.info(f"Validated and standardized PDB: {len(structure.residue_ids)} residues")
+
+            # TODO: Fix write_pdb to preserve atom names properly
+            # For now, skip rewriting if PDB is already valid
+            # write_pdb(pdb_file, structure, truncate_coords=True)
+            logger.info(f"Validated PDB: {len(structure.residue_ids)} residues")
             return True
         
         except Exception as e:

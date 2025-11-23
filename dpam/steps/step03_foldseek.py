@@ -34,21 +34,27 @@ def run_step3(
         True if successful
     """
     logger.info(f"=== Step 3: Foldseek Structure Search for {prefix} ===")
-    
+
     try:
+        # Convert to absolute paths
+        working_dir = working_dir.resolve()
+        data_dir = data_dir.resolve()
+
         # Check input files
         pdb_file = working_dir / f'{prefix}.pdb'
         if not pdb_file.exists():
             logger.error(f"PDB file not found: {pdb_file}")
             return False
-        
+
         # Define output and database paths
         output_file = working_dir / f'{prefix}.foldseek'
-        tmp_dir = working_dir / 'foldseek_tmp'
-        database = data_dir / 'ECOD_foldseek_DB' / 'ECOD_foldseek_DB'
-        
+        tmp_dir = working_dir / f'foldseek_tmp_{prefix}'  # Unique per protein to avoid race condition
+
+        # Foldseek database files are in data_dir directly, not in subdirectory
+        database = data_dir / 'ECOD_foldseek_DB'
+
         # Check if database exists
-        if not (data_dir / 'ECOD_foldseek_DB').exists():
+        if not database.exists():
             logger.error(f"Foldseek database not found: {database}")
             return False
         
@@ -67,8 +73,7 @@ def run_step3(
             tmp_dir=tmp_dir,
             threads=threads,
             evalue=1000000,  # Very permissive e-value
-            max_seqs=1000000,  # Allow many hits
-            working_dir=working_dir
+            max_seqs=1000000  # Allow many hits
         )
         
         # Verify output
