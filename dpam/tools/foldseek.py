@@ -67,9 +67,17 @@ class Foldseek(ExternalTool):
         ]
         
         log_file = output_file.with_suffix('.foldseek.log')
-        
+
+        # Foldseek requires OMP_PROC_BIND to be unset
+        # SLURM sets this but foldseek refuses to run with it set
+        import os
+        env = os.environ.copy()
+        if 'OMP_PROC_BIND' in env:
+            del env['OMP_PROC_BIND']
+            logger.debug("Unset OMP_PROC_BIND for foldseek compatibility")
+
         logger.info(f"Running foldseek for {query_pdb.name}")
-        self._execute(cmd, cwd=working_dir, log_file=log_file)
+        self._execute(cmd, cwd=working_dir, log_file=log_file, env=env)
         logger.info(f"Foldseek completed: {output_file}")
         
         # Clean up tmp directory
