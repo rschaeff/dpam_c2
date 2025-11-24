@@ -1,7 +1,7 @@
 #!/bin/bash
 # Monitor large-scale validation progress
 
-JOB_ID=332330
+JOB_ID=333504
 WORK_DIR="validation_1000_run"
 TOTAL=949
 
