@@ -70,14 +70,37 @@ class Foldseek(ExternalTool):
 
         # Foldseek requires OMP_PROC_BIND to be unset
         # SLURM sets this but foldseek refuses to run with it set
+        # Use shell wrapper to ensure OMP_PROC_BIND is unset before foldseek starts
         import os
         env = os.environ.copy()
-        if 'OMP_PROC_BIND' in env:
-            del env['OMP_PROC_BIND']
-            logger.debug("Unset OMP_PROC_BIND for foldseek compatibility")
+        env.pop('OMP_PROC_BIND', None)  # Remove if present
+        env.pop('OMP_NUM_THREADS', None)  # Also remove OMP_NUM_THREADS to be safe
+
+        # Log the current state for debugging
+        if 'OMP_PROC_BIND' in os.environ:
+            logger.debug(f"OMP_PROC_BIND was set to: {os.environ.get('OMP_PROC_BIND')}")
 
         logger.info(f"Running foldseek for {query_pdb.name}")
-        self._execute(cmd, cwd=working_dir, log_file=log_file, env=env)
+
+        # Use shell=True with explicit unset to ensure env is clean
+        shell_cmd = f"unset OMP_PROC_BIND OMP_NUM_THREADS; {' '.join(cmd)}"
+        import subprocess
+
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, 'w') as f:
+            result = subprocess.run(
+                shell_cmd,
+                shell=True,
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                cwd=working_dir,
+                env=env,
+                text=True
+            )
+
+        if result.returncode != 0:
+            logger.error(f"foldseek failed with return code {result.returncode}")
+            raise subprocess.CalledProcessError(result.returncode, cmd)
         logger.info(f"Foldseek completed: {output_file}")
         
         # Clean up tmp directory
