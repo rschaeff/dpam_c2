@@ -804,16 +804,13 @@ def remove_overlaps(domains: List[List[int]]) -> List[List[int]]:
             else:
                 segs.append([res])
 
-        # Keep segments with >= 10 unique residues
+        # Keep segments with >= 10 unique residues, but only keep the unique residues
         newdomain = []
         for seg in segs:
-            count_good = 0
-            for resid in seg:
-                if resid not in other_resids:
-                    count_good += 1
-            if count_good >= 10:
-                for resid in seg:
-                    newdomain.append(resid)
+            unique_in_seg = [resid for resid in seg if resid not in other_resids]
+            if len(unique_in_seg) >= 10:
+                # Only add unique residues, not the entire segment (fixes overlap bug)
+                newdomain.extend(unique_in_seg)
 
         # Keep domain if >= 25 total residues (v1.0 line 606)
         if len(newdomain) >= 25:
