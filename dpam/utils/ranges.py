@@ -160,6 +160,47 @@ def merge_overlapping_ranges(ranges: List[str]) -> str:
     return residues_to_range(sorted(all_residues))
 
 
+def range_to_residues_list(range_string: str) -> List[int]:
+    """
+    Parse range string into ordered list of residue IDs.
+
+    Unlike range_to_residues which returns a set, this preserves the order
+    of residues as they appear in the alignment. This is critical for
+    maintaining position correspondence between query and template alignments.
+
+    Args:
+        range_string: Range like "10-50,60-100" or "A:10-50,A:60-100"
+
+    Returns:
+        List of residue IDs in order
+
+    Examples:
+        >>> range_to_residues_list("10-15,20-22")
+        [10, 11, 12, 13, 14, 15, 20, 21, 22]
+    """
+    if not range_string or range_string == 'na':
+        return []
+
+    residues = []
+
+    for segment in range_string.split(','):
+        segment = segment.strip()
+        if not segment:
+            continue
+
+        # Remove chain ID if present
+        if ':' in segment:
+            segment = segment.split(':', 1)[1]
+
+        if '-' in segment:
+            start, end = segment.split('-')
+            residues.extend(range(int(start), int(end) + 1))
+        else:
+            residues.append(int(segment))
+
+    return residues
+
+
 # Aliases for backward compatibility with v1.0 code
 parse_range = range_to_residues
 format_range = residues_to_range

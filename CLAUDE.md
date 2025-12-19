@@ -77,6 +77,79 @@ dpam slurm-submit prefixes.txt \
 **CRITICAL - SLURM I/O Performance:**
 The SLURM submission automatically copies the UniRef30 database (~260GB) to each node's local scratch space before running. HHblits is extremely I/O intensive - running hundreds of jobs against a shared NFS mount will saturate network bandwidth and destroy cluster performance for all users. Database copy takes 2-5 minutes but prevents hours of NFS thrashing. The generated SLURM script in `dpam/pipeline/slurm.py` handles this automatically via rsync to `$TMPDIR` or `/tmp/slurm-$SLURM_JOB_ID`.
 
+### Manual SLURM Array Job Template
+
+When running DPAM manually on SLURM (not via `dpam slurm-submit`), use this template:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=dpam
+#SBATCH --output=slurm_logs/%A_%a.out
+#SBATCH --error=slurm_logs/%A_%a.err
+#SBATCH --partition=96GB
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=4G
+#SBATCH --time=8:00:00
+#SBATCH --array=0-999
+
+# Get protein prefix from list file
+PREFIX=$(sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" proteins.txt)
+
+if [ -z "$PREFIX" ]; then
+    echo "No prefix found for task $SLURM_ARRAY_TASK_ID"
+    exit 0
+fi
+
+echo "Processing $PREFIX (task $SLURM_ARRAY_TASK_ID)"
+
+# CRITICAL: Set up Anaconda environment with required packages
+# The system Python (/usr/bin/python3) does NOT have gemmi, tensorflow, etc.
+export PATH="/sw/apps/Anaconda3-2023.09-0/bin:$PATH"
+
+# Copy UniRef30 to local scratch (optional but recommended for HHblits performance)
+UNIREF_SRC="/home/rschaeff_1/data/dpam_reference/ecod_data/UniRef30_2022_02"
+LOCAL_DB="/tmp/slurm-$SLURM_JOB_ID/UniRef30_2022_02"
+if [ -d "$UNIREF_SRC" ]; then
+    mkdir -p "$LOCAL_DB"
+    rsync -a "$UNIREF_SRC/" "$LOCAL_DB/" 2>/dev/null || true
+fi
+
+# CRITICAL: Unset OMP_PROC_BIND for foldseek compatibility
+# SLURM sets this by default, causing foldseek to fail
+unset OMP_PROC_BIND
+
+# Run pipeline - use Python invocation since 'dpam' may not be in PATH
+cd /home/rschaeff/dev/dpam_c2
+python3 -c "
+import sys
+sys.argv = ['dpam', 'run', '$PREFIX',
+    '--working-dir', '/path/to/working_dir',
+    '--data-dir', '/home/rschaeff_1/data/dpam_reference/ecod_data',
+    '--cpus', '8',
+    '--resume']
+from dpam.cli.main import main
+main()
+"
+
+# Cleanup local scratch
+rm -rf "/tmp/slurm-$SLURM_JOB_ID" 2>/dev/null || true
+```
+
+**Key SLURM Environment Issues:**
+
+1. **Python environment**: SLURM jobs don't inherit shell environment. Use absolute path to Anaconda Python (`/sw/apps/Anaconda3-2023.09-0/bin/python3`) or explicitly set PATH.
+
+2. **`dpam` command not found**: The `dpam` entry point may not be in PATH on compute nodes. Use Python module invocation instead:
+   ```python
+   python3 -c "import sys; sys.argv = ['dpam', 'run', ...]; from dpam.cli.main import main; main()"
+   ```
+
+3. **`source ~/.bashrc` doesn't work**: SLURM runs non-interactive shells where `.bashrc` may not be sourced or may exit early. Set PATH explicitly.
+
+4. **OMP_PROC_BIND conflict**: SLURM sets `OMP_PROC_BIND` which breaks foldseek. Always `unset OMP_PROC_BIND` before running.
+
+5. **Missing packages**: System Python lacks gemmi, tensorflow, etc. Must use Anaconda or virtualenv with packages installed.
+
 ## Architecture
 
 ### Module Structure
@@ -341,3 +414,4 @@ This affects how residues are grouped into segments and is critical for matching
 - Ensure reference data includes: `tgroup_length`, `posi_weights/` directory
 
 **Documentation**: See `docs/ML_PIPELINE_SETUP.md` for complete setup and usage guide
+- current alphafold version is v6

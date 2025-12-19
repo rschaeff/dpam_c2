@@ -77,14 +77,6 @@ class AddSS(ExternalTool):
             output_a3m: Output A3M file with SS
             working_dir: Working directory
         """
-        cmd = [
-            self.executable,
-            str(input_a3m),
-            str(output_a3m),
-            '-a3m'
-        ]
-
-        # Set PERL5LIB and HHLIB for HHsuite Perl scripts
         import os
         import shutil
         env = os.environ.copy()
@@ -99,17 +91,36 @@ class AddSS(ExternalTool):
         scripts_dir = addss_path.parent
         hhsuite_dir = scripts_dir.parent  # /sw/apps/hh-suite
 
-        # Set PERL5LIB for HHPaths.pm
-        if 'PERL5LIB' in env:
-            env['PERL5LIB'] = f"{scripts_dir}:{env['PERL5LIB']}"
-        else:
-            env['PERL5LIB'] = str(scripts_dir)
+        # Use DPAM's custom HHPaths.pm with conda PSIPRED paths
+        dpam_tools_dir = Path(__file__).parent.resolve()
 
-        # Set HHLIB for HHPaths.pm to find correct paths
-        env['HHLIB'] = str(hhsuite_dir)
+        # Build command with explicit perl -I flags to ensure correct HHPaths.pm loading
+        # Our custom HHPaths.pm must come FIRST to override system version
+        cmd = [
+            'perl',
+            f'-I{dpam_tools_dir}',
+            f'-I{scripts_dir}',
+            str(addss_path),
+            str(input_a3m),
+            str(output_a3m),
+            '-a3m'
+        ]
+
+        # Set HHLIB to DPAM's tools directory so addss.pl's "use lib $ENV{HHLIB}/scripts"
+        # finds our custom HHPaths.pm (which uses conda PSIPRED paths)
+        env['HHLIB'] = str(dpam_tools_dir)
+
+        # Ensure CONDA_PREFIX is set for our custom HHPaths.pm
+        if 'CONDA_PREFIX' not in env:
+            # Try to detect conda prefix from psipred location
+            psipred_path = shutil.which('psipred')
+            if psipred_path:
+                conda_prefix = Path(psipred_path).parent.parent
+                env['CONDA_PREFIX'] = str(conda_prefix)
+                logger.debug(f"Auto-detected CONDA_PREFIX={conda_prefix}")
 
         logger.info(f"Running addss.pl for {input_a3m.name}")
-        logger.debug(f"PERL5LIB={env['PERL5LIB']}, HHLIB={env['HHLIB']}")
+        logger.debug(f"Using HHPaths.pm from {dpam_tools_dir}, HHLIB={env['HHLIB']}, CONDA_PREFIX={env.get('CONDA_PREFIX', 'not set')}")
         self._execute(cmd, cwd=working_dir, capture_output=True, env=env)
         logger.info(f"addss.pl completed: {output_a3m}")
 
@@ -200,7 +211,7 @@ def run_hhsearch_pipeline(
     working_dir: Optional[Path] = None,
     uniref_db: Optional[Path] = None,
     pdb70_db: Optional[Path] = None,
-    skip_addss: bool = True
+    skip_addss: bool = False
 ) -> Path:
     """
     Run complete HHsearch pipeline: hhblits → (addss) → hhmake → hhsearch.
@@ -213,9 +224,8 @@ def run_hhsearch_pipeline(
         working_dir: Working directory
         uniref_db: Direct path to UniRef database (overrides database_dir)
         pdb70_db: Direct path to PDB70 database (overrides database_dir)
-        skip_addss: Skip addss.pl (secondary structure prediction). Default True.
-                    LIMITATION: Currently True due to missing PSIPRED dependencies.
-                    May affect output compatibility with DPAM v1.0.
+        skip_addss: Skip addss.pl (secondary structure prediction). Default False.
+                    Requires PSIPRED in conda environment. Set True to skip.
 
     Returns:
         Path to hhsearch output file

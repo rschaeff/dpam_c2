@@ -5,13 +5,21 @@ Map domain residues to ECOD template residues using original HHsearch and DALI a
 This provides the actual residue-to-residue mappings needed for coverage calculations.
 
 Input:
-    - step17/{prefix}.confident_predictions: Confident domain-ECOD predictions
-    - step5/{prefix}.hhsearch_hits: HHsearch alignments
-    - step9/{prefix}.dali_good_hits: DALI alignments
+    - {prefix}.step17_confident_predictions: Confident domain-ECOD predictions
+    - {prefix}.map2ecod.result: HHsearch alignments (from step 5)
+    - {prefix}_good_hits: DALI alignments (from step 9)
     - ECOD_maps/{ecod_id}.map: PDB→ECOD residue numbering
 
 Output:
     - {prefix}.step18_mappings: Domain predictions with template ranges
+
+CRITICAL: Template residue filtering
+    For merge candidate detection (step 19), we need to know which template
+    residues correspond to THIS domain's query residues (not the entire alignment).
+
+    Example: If DALI aligns query 1-500 to template 1-300, but domain D1 only
+    covers query 1-200, we should only report template residues that align to
+    the query residues 1-200.
 
 Overlap Criteria (stricter than Step 15):
     - Must have ≥33% overlap relative to domain A
@@ -22,19 +30,19 @@ Overlap Criteria (stricter than Step 15):
 Algorithm:
     1. Load confident predictions from step 17
     2. For each domain-ECOD prediction:
-        a. Find overlapping HHsearch hits
-        b. Find overlapping DALI hits
-        c. Map aligned residues to ECOD canonical numbering
-        d. Convert to range strings
+        a. Find overlapping HHsearch hits from map2ecod.result
+        b. Find overlapping DALI hits from _good_hits
+        c. Filter to only template residues where query aligns to domain
+        d. Map HHsearch template residues to ECOD canonical numbering
+        e. Convert to range strings
     3. Write mappings (may be 'na' if no alignment found)
 """
 
 from pathlib import Path
-from typing import Set, List, Dict, Optional
+from typing import Set, List, Dict, Optional, Tuple
 import logging
 
-from ..utils.ranges import parse_range, format_range
-from ..io.parsers import parse_hhsearch_output
+from ..utils.ranges import parse_range, format_range, range_to_residues_list
 
 logger = logging.getLogger(__name__)
 
@@ -65,36 +73,38 @@ def check_overlap_strict(resids_a: Set[int], resids_b: Set[int]) -> bool:
     return False
 
 
-def load_ecod_map(map_file: Path) -> Dict[int, int]:
+def load_ecod_map(map_file: Path) -> Tuple[Set[int], Dict[int, int]]:
     """
     Load ECOD residue numbering map.
 
-    Format: pdb_resid ecod_resid
+    Format: ecod_resid pdb_resid
 
     Args:
         map_file: ECOD map file path
 
     Returns:
-        Dictionary mapping PDB residue ID to ECOD residue ID
+        Tuple of (set of ECOD residues, dict mapping ECOD to PDB residue IDs)
     """
-    resmap = {}
+    ecod_resids = set()
+    ecod_to_pdb = {}
 
     if not map_file.exists():
         logger.warning(f"ECOD map not found: {map_file}")
-        return resmap
+        return ecod_resids, ecod_to_pdb
 
     with open(map_file, 'r') as f:
         for line in f:
             parts = line.strip().split()
             if len(parts) >= 2:
                 try:
-                    pdb_resid = int(parts[0])
-                    ecod_resid = int(parts[1])
-                    resmap[pdb_resid] = ecod_resid
+                    ecod_resid = int(parts[1])  # ECOD resid in column 1
+                    pdb_resid = int(parts[0])   # PDB resid in column 0
+                    ecod_resids.add(ecod_resid)
+                    ecod_to_pdb[ecod_resid] = pdb_resid
                 except ValueError:
                     continue
 
-    return resmap
+    return ecod_resids, ecod_to_pdb
 
 
 def run_step18(
@@ -119,8 +129,8 @@ def run_step18(
 
     # Input files
     confident_file = working_dir / f"{prefix}.step17_confident_predictions"
-    hhsearch_file = working_dir / f"{prefix}.hhsearch"  # Fixed: use .hhsearch not .hhsearch_hits
-    dali_file = working_dir / f"{prefix}_good_hits"  # Fixed: use _good_hits not .dali_good_hits
+    hhsearch_file = working_dir / f"{prefix}.map2ecod.result"  # Step 5 output
+    dali_file = working_dir / f"{prefix}_good_hits"  # Step 9 output
 
     # Check inputs
     if not confident_file.exists():
@@ -141,27 +151,63 @@ def run_step18(
         logger.error(f"ECOD maps directory not found: {ecod_maps_dir}")
         return False
 
+    # Load ECOD ID to UID mapping from ECOD_length file
+    # Format: uid \t ecod_id \t length
+    ecod_id_to_uid = {}
+    ecod_length_file = data_dir / "ECOD_length"
+    if ecod_length_file.exists():
+        with open(ecod_length_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    uid = parts[0]
+                    ecod_id = parts[1]
+                    ecod_id_to_uid[ecod_id] = uid
+        logger.debug(f"Loaded {len(ecod_id_to_uid)} ECOD ID to UID mappings")
+    else:
+        logger.warning(f"ECOD_length file not found: {ecod_length_file}")
+
     # Output file
     output_file = working_dir / f"{prefix}.step18_mappings"
 
-    # Load HHsearch hits using proper parser
-    hhsearch_alignments = parse_hhsearch_output(hhsearch_file)
-
-    # Convert to format needed by downstream code
+    # Load HHsearch hits from map2ecod.result
+    # Format: uid  ecod_domain_id  hh_prob  ...  query_range  template_range  ...
     hhsearch_hits = []
-    for aln in hhsearch_alignments:
-        # Build query and template residue sets from alignment
-        query_resids = set(range(aln.query_start, aln.query_end + 1))
-        template_resids = list(range(aln.template_start, aln.template_end + 1))
 
-        hhsearch_hits.append({
-            'ecod': aln.hit_id,
-            'prob': aln.probability / 100.0,  # Convert from percentage
-            'query_resids': query_resids,
-            'template_resids': template_resids,
-            'query_range': f"{aln.query_start}-{aln.query_end}",
-            'template_range': f"{aln.template_start}-{aln.template_end}"
-        })
+    with open(hhsearch_file, 'r') as f:
+        for i, line in enumerate(f):
+            if i == 0:  # Skip header
+                continue
+
+            parts = line.strip().split('\t')
+            if len(parts) < 13:
+                continue
+
+            try:
+                ecod_id = parts[1]  # ecod_domain_id
+                hh_prob = float(parts[2]) / 100.0  # Convert from percentage
+                query_range = parts[11]  # query_range column
+                template_range = parts[12]  # template_range column
+
+                # Get position-correspondent lists
+                query_resids = range_to_residues_list(query_range)
+                template_resids = range_to_residues_list(template_range)
+
+                if len(query_resids) != len(template_resids):
+                    logger.warning(f"HHsearch Q/T length mismatch for {ecod_id}: "
+                                   f"{len(query_resids)} vs {len(template_resids)}")
+                    continue
+
+                hhsearch_hits.append({
+                    'ecod': ecod_id,
+                    'prob': hh_prob,
+                    'query_resids': query_resids,
+                    'template_resids': template_resids,
+                    'query_resids_set': set(query_resids)
+                })
+            except (ValueError, IndexError) as e:
+                logger.debug(f"Skipping malformed HHsearch line: {e}")
+                continue
 
     logger.debug(f"Loaded {len(hhsearch_hits)} HHsearch hits")
 
@@ -178,21 +224,26 @@ def run_step18(
                 continue
 
             try:
-                ecod_id = parts[2]  # Fixed: ecodkey is column 2, not 1
-                zscore = float(parts[4])  # Already in correct format, no need to divide
-                query_range = parts[9]
-                template_range = parts[10]
+                ecod_id = parts[2]  # ecodkey column
+                zscore = float(parts[4])
+                query_range = parts[9]  # qrange column
+                template_range = parts[10]  # erange column
 
-                query_resids = set(parse_range(query_range))
-                template_resids = list(parse_range(template_range))
+                # Get position-correspondent lists
+                query_resids = range_to_residues_list(query_range)
+                template_resids = range_to_residues_list(template_range)
+
+                if len(query_resids) != len(template_resids):
+                    logger.warning(f"DALI Q/T length mismatch for {ecod_id}: "
+                                   f"{len(query_resids)} vs {len(template_resids)}")
+                    continue
 
                 dali_hits.append({
                     'ecod': ecod_id,
                     'zscore': zscore,
                     'query_resids': query_resids,
                     'template_resids': template_resids,
-                    'query_range': query_range,
-                    'template_range': template_range
+                    'query_resids_set': set(query_resids)
                 })
             except (ValueError, IndexError) as e:
                 logger.debug(f"Skipping malformed DALI line: {e}")
@@ -226,19 +277,30 @@ def run_step18(
 
             for hit in hhsearch_hits:
                 if hit['ecod'] == ecod_ref:
-                    if check_overlap_strict(domain_resids, hit['query_resids']):
-                        # Load ECOD map
-                        ecod_map = load_ecod_map(ecod_maps_dir / f"{ecod_ref}.map")
+                    if check_overlap_strict(domain_resids, hit['query_resids_set']):
+                        # Load ECOD map using UID
+                        uid = ecod_id_to_uid.get(ecod_ref)
+                        if not uid:
+                            logger.debug(f"No UID found for {ecod_ref}")
+                            continue
+                        ecod_resids, ecod_to_pdb = load_ecod_map(
+                            ecod_maps_dir / f"{uid}.map"
+                        )
 
-                        # Map template residues to ECOD canonical numbering
-                        mapped_resids = []
-                        for tres in hit['template_resids']:
-                            if tres in ecod_map:
-                                mapped_resids.append(ecod_map[tres])
-                            # If not in map, keep original (for domains without mapping)
+                        # Filter template residues to only those where
+                        # the query residue falls within THIS domain
+                        filtered_template_resids = []
+                        for i in range(len(hit['query_resids'])):
+                            qres = hit['query_resids'][i]
+                            tres = hit['template_resids'][i]
+                            # Only include if query residue is in this domain
+                            # and template residue maps to ECOD
+                            if qres in domain_resids and tres in ecod_resids:
+                                # Map to ECOD canonical numbering
+                                filtered_template_resids.append(ecod_to_pdb[tres])
 
-                        if mapped_resids:
-                            hh_template_range = format_range(mapped_resids)
+                        if filtered_template_resids:
+                            hh_template_range = format_range(filtered_template_resids)
                         break
 
             # Find overlapping DALI hit for this ECOD
@@ -246,9 +308,20 @@ def run_step18(
 
             for hit in dali_hits:
                 if hit['ecod'] == ecod_ref:
-                    if check_overlap_strict(domain_resids, hit['query_resids']):
+                    if check_overlap_strict(domain_resids, hit['query_resids_set']):
+                        # Filter template residues to only those where
+                        # the query residue falls within THIS domain
                         # DALI residues are already in ECOD numbering from step 9
-                        dali_template_range = format_range(hit['template_resids'])
+                        filtered_template_resids = []
+                        for i in range(len(hit['query_resids'])):
+                            qres = hit['query_resids'][i]
+                            tres = hit['template_resids'][i]
+                            # Only include if query residue is in this domain
+                            if qres in domain_resids:
+                                filtered_template_resids.append(tres)
+
+                        if filtered_template_resids:
+                            dali_template_range = format_range(filtered_template_resids)
                         break
 
             results.append(
@@ -266,9 +339,10 @@ def run_step18(
     logger.info(f"Step 18 complete: {len(results)} mappings generated")
 
     # Summary statistics
-    hh_mapped = sum(1 for r in results if not r.endswith('na\tna'))
-    dali_mapped = sum(1 for r in results if not r.split('\t')[-1] == 'na')
-    both_mapped = sum(1 for r in results if 'na\tna' not in r and not r.endswith('\tna'))
+    hh_mapped = sum(1 for r in results if r.split('\t')[6] != 'na')
+    dali_mapped = sum(1 for r in results if r.split('\t')[7] != 'na')
+    both_mapped = sum(1 for r in results
+                      if r.split('\t')[6] != 'na' and r.split('\t')[7] != 'na')
 
     logger.info(f"  HHsearch mapped: {hh_mapped}/{len(results)}")
     logger.info(f"  DALI mapped: {dali_mapped}/{len(results)}")

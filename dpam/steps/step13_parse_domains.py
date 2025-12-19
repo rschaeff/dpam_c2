@@ -395,7 +395,7 @@ def calculate_probability_matrix(
     """
     Calculate combined probability matrix.
 
-    Combined: dist^0.1 * pae^0.1 * hhs^0.4 * dali^0.4
+    Combined: (dist * pae * hhs * dali) ^ 0.25 (geometric mean, v1.0 formula)
 
     CRITICAL (matches v1.0):
     1. Aggregate HHS/DALI scores from goodDomains
@@ -448,8 +448,8 @@ def calculate_probability_matrix(
             hhs_prob = get_HHS_prob(aggregated_hhs[key])
             dali_prob = get_DALI_prob(aggregated_dali[key])
 
-            # Combined probability
-            combined = (dist_prob ** 0.1) * (pae_prob ** 0.1) * (hhs_prob ** 0.4) * (dali_prob ** 0.4)
+            # Combined probability - v1.0 geometric mean formula
+            combined = (dist_prob * pae_prob * hhs_prob * dali_prob) ** 0.25
             prob_matrix[(res1, res2)] = combined
 
     return prob_matrix
@@ -804,13 +804,13 @@ def remove_overlaps(domains: List[List[int]]) -> List[List[int]]:
             else:
                 segs.append([res])
 
-        # Keep segments with >= 10 unique residues, but only keep the unique residues
+        # Keep segments with >= 10 unique residues - v1.0 keeps entire segment
         newdomain = []
         for seg in segs:
             unique_in_seg = [resid for resid in seg if resid not in other_resids]
             if len(unique_in_seg) >= 10:
-                # Only add unique residues, not the entire segment (fixes overlap bug)
-                newdomain.extend(unique_in_seg)
+                # v1.0 behavior: keep entire segment, not just unique residues (line 698-702)
+                newdomain.extend(seg)
 
         # Keep domain if >= 25 total residues (v1.0 line 606)
         if len(newdomain) >= 25:

@@ -334,11 +334,13 @@ def run_step15(
                 # Load ECOD map
                 ecod_map = load_ecod_map(ecod_maps_dir / f"{ecod_id}.map")
 
-                zscore = float(parts[4])
+                # V1.0 normalizes z-score and rank by dividing by 10
+                # This matches the training data used for the DOMASS model
+                zscore = float(parts[4]) / 10.0
                 qscore = float(parts[5])
                 ztile = float(parts[6])
                 qtile = float(parts[7])
-                rank = float(parts[8])
+                rank = float(parts[8]) / 10.0
                 query_range = parts[9]
                 template_range = parts[10]
 

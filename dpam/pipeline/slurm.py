@@ -75,12 +75,18 @@ def generate_slurm_script(
     
     script_lines.extend([
         "",
+        "# CRITICAL: Unset OMP vars BEFORE conda activates - conda's OpenMP checks these at load time",
+        "unset OMP_PROC_BIND OMP_NUM_THREADS OMP_PLACES OMP_SCHEDULE",
+        "",
         "# Load modules if needed",
         "# module load hhsuite foldseek dali",
         "",
         "# Activate conda environment",
         "source ~/.bashrc",
         "conda activate dpam",
+        "",
+        "# Add HHsuite scripts to PATH for addss.pl",
+        "export PATH=/sw/apps/hh-suite/scripts:$PATH",
         "",
         "# Get prefix for this array task",
         f"PREFIX=$(sed -n \"$((SLURM_ARRAY_TASK_ID + 1))p\" {prefix_file})",
