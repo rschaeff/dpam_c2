@@ -15,8 +15,8 @@ Input:
 Output:
     - {prefix}.step23_predictions: Domain classifications (full/part/miss)
 
-Classification Logic:
-    full:  prob ≥0.85, weighted_ratio ≥0.66, length_ratio ≥0.33
+Classification Logic (V1-compatible):
+    full:  prob ≥0.85, (weighted_ratio ≥0.66 OR length_ratio ≥0.66) AND both ≥0.33
     part:  prob ≥0.85, (weighted_ratio ≥0.33 OR length_ratio ≥0.33)
     miss:  prob <0.85 OR both ratios <0.33
 
@@ -246,10 +246,11 @@ def run_step23(
             elif pred['dpam_prob'] > ecod_to_best[ecod]['dpam_prob']:
                 ecod_to_best[ecod] = pred
 
-        # Sort ECODs by probability (descending) to prioritize best matches
+        # V1 logic: Sort merged domain ECODs by prob * domain_length (not just prob)
+        # This gives preference to longer domains when probability is similar
         sorted_ecods = sorted(
             ecod_to_best.items(),
-            key=lambda x: x[1]['dpam_prob'],
+            key=lambda x: x[1]['dpam_prob'] * merged_length,
             reverse=True
         )
 
@@ -277,11 +278,14 @@ def run_step23(
                     hh_range, dali_range, quality = domain_ecod_to_mapping[key]
                     qualities.append(quality)
 
-                    # Prefer DALI over HHsearch (longer alignment)
-                    if dali_range != 'na':
-                        template_resids.update(parse_range(dali_range))
-                    elif hh_range != 'na':
-                        template_resids.update(parse_range(hh_range))
+                    # V1 logic: Use DALI only if it covers >50% of HH residues
+                    hh_resids = set(parse_range(hh_range)) if hh_range != 'na' else set()
+                    dali_resids = set(parse_range(dali_range)) if dali_range != 'na' else set()
+
+                    if len(dali_resids) > len(hh_resids) * 0.5:
+                        template_resids.update(dali_resids)
+                    else:
+                        template_resids.update(hh_resids)
 
             if not template_resids:
                 continue
@@ -308,10 +312,14 @@ def run_step23(
             else:
                 length_ratio = len(template_resids) / ecod_length
 
-            # Classify
+            # Classify using V1 logic:
+            # full: (ratio1 >= 0.66 OR ratio2 >= 0.66) AND (ratio1 >= 0.33 AND ratio2 >= 0.33)
             if dpam_prob >= 0.85:
-                if weighted_ratio >= 0.66 and length_ratio >= 0.33:
-                    classification = 'full'
+                if (weighted_ratio >= 0.66 or length_ratio >= 0.66):
+                    if weighted_ratio >= 0.33 and length_ratio >= 0.33:
+                        classification = 'full'
+                    else:
+                        classification = 'part'
                 elif weighted_ratio >= 0.33 or length_ratio >= 0.33:
                     classification = 'part'
                 else:
@@ -394,10 +402,14 @@ def run_step23(
             if key in domain_ecod_to_mapping:
                 hh_range, dali_range, quality_value = domain_ecod_to_mapping[key]
 
-                if dali_range != 'na':
-                    template_resids.update(parse_range(dali_range))
-                elif hh_range != 'na':
-                    template_resids.update(parse_range(hh_range))
+                # V1 logic: Use DALI only if it covers >50% of HH residues
+                hh_resids = set(parse_range(hh_range)) if hh_range != 'na' else set()
+                dali_resids = set(parse_range(dali_range)) if dali_range != 'na' else set()
+
+                if len(dali_resids) > len(hh_resids) * 0.5:
+                    template_resids.update(dali_resids)
+                else:
+                    template_resids.update(hh_resids)
 
             if not template_resids:
                 continue
@@ -416,10 +428,14 @@ def run_step23(
             else:
                 length_ratio = len(template_resids) / ecod_length
 
-            # Classify
+            # Classify using V1 logic:
+            # full: (ratio1 >= 0.66 OR ratio2 >= 0.66) AND (ratio1 >= 0.33 AND ratio2 >= 0.33)
             if dpam_prob >= 0.85:
-                if weighted_ratio >= 0.66 and length_ratio >= 0.33:
-                    classification = 'full'
+                if (weighted_ratio >= 0.66 or length_ratio >= 0.66):
+                    if weighted_ratio >= 0.33 and length_ratio >= 0.33:
+                        classification = 'full'
+                    else:
+                        classification = 'part'
                 elif weighted_ratio >= 0.33 or length_ratio >= 0.33:
                     classification = 'part'
                 else:

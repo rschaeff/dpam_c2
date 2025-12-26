@@ -160,12 +160,17 @@ def run_step19(
                 else:
                     domain_to_best_prob[domain] = max(domain_to_best_prob[domain], prob)
 
-                # Get template residues (prefer DALI > HHsearch)
-                if dali_template_range != 'na':
-                    template_resids = set(parse_range(dali_template_range))
-                elif hh_template_range != 'na':
-                    template_resids = set(parse_range(hh_template_range))
+                # Get template residues using V1 logic:
+                # Use DALI only if it covers >50% of HHsearch residues
+                hh_resids = set(parse_range(hh_template_range)) if hh_template_range != 'na' else set()
+                dali_resids = set(parse_range(dali_template_range)) if dali_template_range != 'na' else set()
+
+                if len(dali_resids) > len(hh_resids) * 0.5:
+                    template_resids = dali_resids
                 else:
+                    template_resids = hh_resids
+
+                if not template_resids:
                     continue  # No template mapping
 
                 # Calculate weighted coverage
@@ -243,7 +248,9 @@ def run_step19(
                 # Template regions must cover different areas (< 25% overlap)
                 common = tres1 & tres2
 
-                if (len(common) >= 0.25 * len(tres1) or
+                # V1 logic: Skip only if BOTH have high overlap (AND, not OR)
+                # This is more permissive - allows merge if EITHER has low overlap
+                if (len(common) >= 0.25 * len(tres1) and
                     len(common) >= 0.25 * len(tres2)):
                     continue
 
