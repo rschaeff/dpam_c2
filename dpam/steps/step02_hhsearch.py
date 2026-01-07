@@ -18,7 +18,8 @@ def run_step2(
     data_dir: Path = None,
     cpus: int = 1,
     uniref_db: Path = None,
-    pdb70_db: Path = None
+    pdb70_db: Path = None,
+    skip_addss: bool = False
 ) -> bool:
     """
     Run Step 2: HHsearch pipeline.
@@ -30,6 +31,8 @@ def run_step2(
         cpus: Number of CPUs
         uniref_db: Direct path to UniRef database (optional)
         pdb70_db: Direct path to PDB70 database (optional)
+        skip_addss: Skip addss.pl secondary structure prediction (default False).
+                    Set True when PSIPRED is not available.
 
     Returns:
         True if successful
@@ -57,7 +60,8 @@ def run_step2(
             cpus=cpus,
             working_dir=working_dir,
             uniref_db=uniref_db,
-            pdb70_db=pdb70_db
+            pdb70_db=pdb70_db,
+            skip_addss=skip_addss
         )
         
         if hhsearch_file.exists():

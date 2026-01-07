@@ -260,7 +260,7 @@ def run_step15(
     with open(gooddomains_file, 'r') as f:
         for line in f:
             parts = line.strip().split('\t')
-            if len(parts) < 10:
+            if len(parts) < 11:  # Need at least 11 columns after step10 fix
                 continue
 
             # Only process sequence (HHsearch) hits
@@ -277,8 +277,9 @@ def run_step15(
                 hgroup = ecod_to_hgroup[ecod_id]
                 prob = float(parts[5]) / 100.0  # Already percentage (100.0 = 1.0)
                 coverage = float(parts[6])
-                template_range = parts[8]
-                query_range = parts[9]
+                # After step10 fix: cols 8=query_range, 9=template_range (ECOD numbering), 10=filtered_query
+                template_range = parts[9]  # ECOD template residue numbering
+                query_range = parts[10]    # Filtered query range
 
                 query_resids = parse_range(query_range)
                 template_resids = list(parse_range(template_range))

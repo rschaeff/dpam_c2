@@ -98,10 +98,36 @@ def dssp_available():
 
 
 @pytest.fixture(scope="session")
-def foldseek_available():
-    """Check if foldseek is available."""
-    if shutil.which("foldseek") is None:
-        pytest.skip("foldseek not available")
+def psipred_available():
+    """Check if PSIPRED is available."""
+    import os
+    psipred = shutil.which("psipred")
+    if psipred is None:
+        conda_prefix = os.environ.get("CONDA_PREFIX", "")
+        if conda_prefix:
+            psipred_path = Path(conda_prefix) / "bin" / "psipred"
+            if psipred_path.exists():
+                return True
+        pytest.skip("PSIPRED not available")
+    return True
+
+
+@pytest.fixture(scope="session")
+def tensorflow_available():
+    """Check if TensorFlow is available."""
+    try:
+        import tensorflow as tf
+        return True
+    except ImportError:
+        pytest.skip("TensorFlow not available")
+
+
+@pytest.fixture(scope="session")
+def domass_model_available(ecod_data_dir):
+    """Check if DOMASS model files are available."""
+    model_meta = ecod_data_dir / "domass_epo29.meta"
+    if not model_meta.exists():
+        pytest.skip("DOMASS model not available")
     return True
 
 

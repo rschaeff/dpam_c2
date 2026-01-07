@@ -29,21 +29,24 @@ class DPAMPipeline:
         working_dir: Path,
         data_dir: Path,
         cpus: int = 1,
-        resume: bool = True
+        resume: bool = True,
+        skip_addss: bool = False
     ):
         """
         Initialize pipeline.
-        
+
         Args:
             working_dir: Working directory for processing
             data_dir: Directory containing reference data
             cpus: Number of CPUs to use
             resume: Resume from checkpoints if available
+            skip_addss: Skip addss.pl secondary structure (PSIPRED not available)
         """
         self.working_dir = Path(working_dir)
         self.data_dir = Path(data_dir)
         self.cpus = cpus
         self.resume = resume
+        self.skip_addss = skip_addss
         
         self.working_dir.mkdir(parents=True, exist_ok=True)
         
@@ -168,7 +171,8 @@ class DPAMPipeline:
         
         elif step == PipelineStep.HHSEARCH:
             from dpam.steps.step02_hhsearch import run_step2
-            return run_step2(prefix, self.working_dir, self.data_dir, self.cpus)
+            return run_step2(prefix, self.working_dir, self.data_dir, self.cpus,
+                             skip_addss=self.skip_addss)
         
         elif step == PipelineStep.FOLDSEEK:
             from dpam.steps.step03_foldseek import run_step3

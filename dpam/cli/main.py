@@ -57,6 +57,8 @@ Examples:
                            help='Log file path')
     run_parser.add_argument('--json-log', action='store_true',
                            help='Use JSON logging format')
+    run_parser.add_argument('--skip-addss', action='store_true',
+                           help='Skip addss.pl (requires PSIPRED). Set when PSIPRED unavailable.')
     
     # Run-step command
     step_parser = subparsers.add_parser('run-step', help='Run single pipeline step')
@@ -72,6 +74,8 @@ Examples:
                             help='Number of CPUs')
     step_parser.add_argument('--log-file', type=Path,
                             help='Log file path')
+    step_parser.add_argument('--skip-addss', action='store_true',
+                            help='Skip addss.pl (requires PSIPRED)')
     
     # Batch command
     batch_parser = subparsers.add_parser('batch', help='Process multiple structures')
@@ -142,11 +146,13 @@ def run_pipeline(args) -> int:
         steps = [PipelineStep[s] for s in args.steps]
     
     # Create pipeline
+    skip_addss = getattr(args, 'skip_addss', False)
     pipeline = DPAMPipeline(
         working_dir=args.working_dir,
         data_dir=args.data_dir,
         cpus=args.cpus,
-        resume=args.resume
+        resume=args.resume,
+        skip_addss=skip_addss
     )
     
     # Run pipeline
@@ -169,12 +175,14 @@ def run_single_step(args) -> int:
     """Run single pipeline step"""
     step = PipelineStep[args.step]
     logger.info(f"Running {step.name} for {args.prefix}")
-    
+
+    skip_addss = getattr(args, 'skip_addss', False)
     pipeline = DPAMPipeline(
         working_dir=args.working_dir,
         data_dir=args.data_dir,
         cpus=args.cpus,
-        resume=False
+        resume=False,
+        skip_addss=skip_addss
     )
     
     try:

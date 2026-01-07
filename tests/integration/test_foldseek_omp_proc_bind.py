@@ -3,7 +3,15 @@ Test foldseek OMP_PROC_BIND environment variable handling.
 
 This test verifies that foldseek works correctly even when OMP_PROC_BIND
 is set in the environment (as SLURM does by default). The foldseek tool
-wrapper should automatically unset this variable before calling foldseek.
+wrapper sets OMP_PROC_BIND=false before calling foldseek.
+
+Background on the fix:
+- Foldseek/MMseqs2 checks OMP_PROC_BIND using omp_get_proc_bind() for OpenMP 4.0+
+- Simply unsetting the env var doesn't work because the OpenMP runtime may already
+  have affinity enabled via SLURM's cgroup-level CPU binding
+- Setting OMP_PROC_BIND=false tells the OpenMP runtime to disable thread binding,
+  which makes omp_get_proc_bind() return omp_proc_bind_false
+- See: lib/mmseqs/src/commons/CommandCaller.cpp in foldseek source
 """
 
 import os
@@ -121,7 +129,8 @@ class TestFoldseekOMPProcBind:
         Test foldseek works when OMP_PROC_BIND='true' (SLURM default).
 
         This is the critical test - foldseek fails without our fix when
-        OMP_PROC_BIND is set. Our wrapper should unset it automatically.
+        OMP_PROC_BIND is set. Our wrapper sets OMP_PROC_BIND=false to
+        disable OpenMP thread binding before calling foldseek.
         """
         # Set OMP_PROC_BIND as SLURM does
         original_value = os.environ.get('OMP_PROC_BIND')
@@ -208,7 +217,7 @@ class TestFoldseekOMPProcBind:
         temp_workspace
     ):
         """
-        Test that unsetting OMP_PROC_BIND doesn't affect parent process.
+        Test that setting OMP_PROC_BIND=false doesn't affect parent process.
 
         Verify that our modification of the environment for foldseek
         doesn't leak back to the calling process.

@@ -218,10 +218,11 @@ def process_sequence_hits(
             )
 
             if filtered_range:
-                # Format: sequence\tprefix\t{cols 0-6}\tfiltered_range
+                # Format: sequence\tprefix\t{cols 0-7}\tfiltered_range
+                # Cols 0-7: hitname, ecod_id, hgroup, prob, cov, len, query_range, template_range
                 result_line = (
                     f"sequence\t{prefix}\t" +
-                    '\t'.join(words[:7]) +
+                    '\t'.join(words[:8]) +
                     f"\t{filtered_range}\n"
                 )
                 results.append(result_line)

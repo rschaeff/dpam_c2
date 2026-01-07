@@ -277,13 +277,22 @@ class PipelineState:
         import json
         with open(path, 'r') as f:
             state_dict = json.load(f)
-        
+
+        # Handle both list format (legacy) and dict format for failed_steps
+        failed_steps_raw = state_dict.get('failed_steps', {})
+        if isinstance(failed_steps_raw, list):
+            # Legacy format: list of step names (no error messages)
+            failed_steps = {PipelineStep[s]: "Unknown error" for s in failed_steps_raw}
+        else:
+            # Current format: dict of step name -> error message
+            failed_steps = {PipelineStep[s]: err for s, err in failed_steps_raw.items()}
+
         return cls(
             prefix=state_dict['prefix'],
             working_dir=Path(state_dict['working_dir']),
             completed_steps={PipelineStep[s] for s in state_dict['completed_steps']},
-            failed_steps={PipelineStep[s]: err for s, err in state_dict['failed_steps'].items()},
-            metadata=state_dict['metadata']
+            failed_steps=failed_steps,
+            metadata=state_dict.get('metadata', {})
         )
 
 
