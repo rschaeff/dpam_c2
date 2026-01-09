@@ -1,5 +1,6 @@
 # Custom HHPaths.pm for DPAM v2.0
 # Configured to use conda environment paths for PSIPRED and BLAST
+# Falls back gracefully when PSIPRED is not available
 
 package HHPaths;
 
@@ -11,13 +12,14 @@ our @ISA     = qw(Exporter);
 our @EXPORT  = qw($VERSION $hhlib $hhdata $hhbin $hhscripts $execdir $datadir $ncbidir $dummydb $pdbdir $dsspdir $dssp $cs_lib $context_lib $v);
 push @EXPORT, qw($hhshare $hhbdata);
 
-# Get paths from conda environment
-my $conda_prefix = $ENV{"CONDA_PREFIX"} || die "CONDA_PREFIX not set";
+# Get paths from conda environment (optional - PSIPRED may not be available)
+my $conda_prefix = $ENV{"CONDA_PREFIX"} || "";
 
-# PSIPRED paths (from conda)
-our $execdir = "$conda_prefix/bin";                      # psipred, psipass2 binaries
-our $datadir = "$conda_prefix/share/psipred/data";       # psipred weight files
-our $ncbidir = "$conda_prefix/bin";                      # blastpgp, makemat, formatdb
+# PSIPRED paths (from conda if available, otherwise placeholders)
+# addss.pl will fail gracefully if psipred binaries are not found
+our $execdir = $conda_prefix ? "$conda_prefix/bin" : "/usr/bin";
+our $datadir = $conda_prefix ? "$conda_prefix/share/psipred/data" : "/dev/null";
+our $ncbidir = $conda_prefix ? "$conda_prefix/bin" : "/usr/bin";
 
 # PDB/DSSP paths (not used for addss.pl SS prediction mode)
 our $pdbdir  = "/dev/null";
