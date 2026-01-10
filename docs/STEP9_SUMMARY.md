@@ -52,10 +52,12 @@ dpam run-step AF-P12345 --step GET_SUPPORT \
 2. Group by ECOD domain
 3. For each domain:
    - Sort by probability (descending)
-   - Filter: coverage >= 0.4 AND probability >= 50
+   - NO probability/coverage filtering (passes all hits to DOMASS ML)
    - Remove overlaps: keep if >= 50% new residues
 4. Write filtered hits to _sequence.result
 ```
+
+**Note:** Unlike earlier documentation suggested, Step 9 does NOT filter by probability or coverage thresholds. All hits are passed to the ML pipeline (DOMASS) for classification.
 
 ### Part 2: Structure Hits
 
@@ -108,17 +110,16 @@ dpam run-step AF-P12345 --step GET_SUPPORT \
 
 ## Key Features
 
-### Sequence Hit Filtering
+### Sequence Hit Processing
 
-**Coverage threshold:** ≥ 0.4
-- Requires alignment to cover 40%+ of template
-
-**Probability threshold:** ≥ 50
-- HHsearch probability must be 50+
+**No probability/coverage filtering:**
+- All hits passed through for ML classification
+- Matches original DPAM behavior
 
 **Overlap removal:** ≥ 50% new residues
 - Each hit must contribute 50%+ novel template coverage
 - Processed in probability order (best first)
+- Prevents redundant hits from same domain region
 
 ### Structure Hit Enhancement
 
@@ -141,12 +142,12 @@ dpam run-step AF-P12345 --step GET_SUPPORT \
 - > 90: Very confident
 - 70-90: Confident
 - 50-70: Moderate confidence
-- < 50: Filtered out
+- < 50: Low confidence (but still passed to ML)
 
 **Coverage** (higher is better):
 - > 0.7: High coverage
 - 0.4-0.7: Moderate coverage
-- < 0.4: Filtered out
+- < 0.4: Low coverage (but still passed to ML)
 
 ### Structure Hits
 
@@ -203,7 +204,8 @@ Main entry point.
 ## Backward Compatibility
 
 ✅ **100% v1.0 compatible**
-- Filtering thresholds match exactly (0.4, 50, 50%)
+- No probability/coverage filtering (passes all hits)
+- Overlap removal: 50% new residues required
 - Gap tolerance matches (10 residues)
 - Overlap calculation matches exactly
 - Output formats match exactly

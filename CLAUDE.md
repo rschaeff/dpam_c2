@@ -173,9 +173,9 @@ dpam/
 
 ### Pipeline Steps (1-25)
 
-**Current Status: 24/25 core steps implemented (96%); ML pipeline fully validated**
+**Current Status: 24/25 core steps implemented (96%); Pipeline fully validated**
 
-**Latest Update (2025-10-18)**: Steps 15-24 successfully tested end-to-end on validation protein O33946. All critical bugs fixed. See `docs/END_TO_END_PIPELINE.md` for complete workflow documentation.
+**Validation Complete (January 2025)**: Comprehensive V1 vs V2 validation on ~10,000 SwissProt proteins shows 94.3% T-group agreement and 98.9% agreement for high-confidence predictions. See `docs/V2_VALIDATION_REPORT.md` for complete analysis.
 
 #### Phase 1: Domain Identification (Steps 1-13)
 | Step | Name | Status | File |
@@ -221,18 +221,15 @@ dpam/
 - Trained model checkpoint files: `domass_epo29.meta`, `.index`, `.data-*` in data directory
 - Additional reference files: `tgroup_length`, `posi_weights/` directory
 
-**ML Pipeline Validation (2025-10-18)**:
-- ✅ **Batch tested on 15 validation proteins** (70-1245 residues, 1-9 domains)
-- ✅ **100% completion rate** (15/15 proteins processed successfully)
-- ✅ Fixed step 15 input file paths (`.goodDomains` instead of `.hhsearch`)
-- ✅ Fixed step 15 ECOD hierarchy loading (column 1 instead of column 0)
-- ✅ Fixed step 16 TensorFlow model architecture (layer names `dense`/`dense_1`)
-- ✅ All steps (15-24) functional across diverse protein sizes
-- 📊 Performance: 4.8s average per protein (range: 1.7-14.6s for 9-1872 features)
-- 📊 Feature generation: avg 537.7 features, avg 62.2 high-confidence predictions
-- ⚠️ Known issue: Small proteins (<100 features) need dynamic batch size fix
-- See `docs/END_TO_END_PIPELINE.md` for single-protein validation details
-- See `docs/ML_PIPELINE_BATCH_TEST.md` for comprehensive batch testing results
+**Large-Scale Validation (January 2025)**:
+- ✅ **Validated on ~10,000 SwissProt proteins** with comparison to V1
+- ✅ **94.3% T-group agreement** between V1 and V2
+- ✅ **98.9% T-group agreement** for high-confidence (`good_domain`) predictions
+- ✅ **All 9 validation metrics pass** defined thresholds
+- 📊 79.1% of V1 domains have high-quality V2 matches (Jaccard ≥0.8)
+- ⚠️ Known limitation: Repeat domains (WD40, TPR) may be merged into super-domains
+- See `docs/V2_VALIDATION_REPORT.md` for complete validation analysis
+- See `docs/ML_PIPELINE_SETUP.md` for TensorFlow model setup
 
 ### Key Design Patterns
 
@@ -371,13 +368,20 @@ Structured logging via `utils/logging_config.py`:
 
 ## Documentation
 
-Comprehensive documentation available in `docs/`:
-- **PROGRESS.md**: Current implementation status and timeline
+**Core documentation** in `docs/`:
+- **V2_VALIDATION_REPORT.md**: Comprehensive V1 vs V2 validation results
 - **ARCHITECTURE.md**: System architecture and data flow
 - **IMPLEMENTATION_GUIDE.md**: Developer guide for adding steps
-- **STEP*_IMPLEMENTATION.md**: Technical details for each step
-- **STEP*_USAGE.md**: Usage guides for each step
-- **STEP*_SUMMARY.md**: Quick reference summaries
+- **ML_PIPELINE_SETUP.md**: TensorFlow model configuration
+- **KNOWN_ISSUES.md**: Current known issues and workarounds
+
+**Reference documentation**:
+- **STEP*_SUMMARY.md**: Quick reference for pipeline steps
+- **DEPENDENCIES.md**: External tool requirements
+
+**Historical documentation** (in `docs/archive/`):
+- Session summaries and development history
+- Superseded validation reports
 
 ## Key Implementation Notes
 

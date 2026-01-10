@@ -2,7 +2,7 @@
 
 **Status:** ✅ Complete
 **Implementation:** `steps/step12_disorder.py`
-**Lines of Code:** ~310
+**Lines of Code:** ~340
 **Complexity:** Medium
 
 ---
@@ -14,9 +14,9 @@ Predict disordered regions based on:
 - **PAE matrix** (inter-SSE contacts)
 - **Good domains** (annotated regions)
 
-Uses sliding 5-residue window to find regions with:
-- Low inter-SSE contacts (≤ 5)
-- Few good domain residues (≤ 2)
+Uses sliding 10-residue window to find regions with:
+- Low inter-SSE contacts (≤ 30)
+- Few good domain residues (≤ 5)
 
 ---
 
@@ -54,16 +54,17 @@ dpam run-step AF-P12345 --step DISORDER --working-dir ./work
    - Parse AlphaFold confidence scores
 
 4. Calculate inter-SSE contacts
-   - Sequence separation >= 20
-   - PAE < 6 (high confidence)
+   - Sequence separation >= 10
+   - PAE < 12 (confident contact)
    - Between different SSEs
+   - Contacts counted bidirectionally
 
-5. Sliding window (5 residues)
+5. Sliding window (10 residues)
    For each window:
    - Count total inter-SSE contacts
    - Count good domain residues
-   - If contacts <= 5 AND hit_res <= 2:
-     - Mark all 5 residues as disordered
+   - If contacts <= 30 AND hit_res <= 5:
+     - Mark all 10 residues as disordered
 
 6. Write disordered residues
 ```
@@ -73,19 +74,19 @@ dpam run-step AF-P12345 --step DISORDER --working-dir ./work
 ## Contact Criteria
 
 **Inter-SSE contact** defined as:
-1. **Sequence separation:** ≥ 20 residues apart
-2. **PAE threshold:** < 6 Å (high confidence)
+1. **Sequence separation:** ≥ 10 residues apart
+2. **PAE threshold:** < 12 Å (confident contact)
 3. **SSE requirement:** At least one residue in SSE
 4. **Different SSEs:** Not in same SSE element
 
 ---
 
-## Window Criteria (5 residues)
+## Window Criteria (10 residues)
 
 **Disordered if BOTH:**
-1. **Total contacts ≤ 5**
-   - Sum of inter-SSE contacts for all residues in SSEs within window
-2. **Hit residues ≤ 2**
+1. **Total contacts ≤ 30**
+   - Sum of inter-SSE contacts for all residues in window
+2. **Hit residues ≤ 5**
    - Number of residues in good domains within window
 
 **Rationale:**
@@ -129,12 +130,6 @@ dpam run-step AF-P12345 --step DISORDER --working-dir ./work
 - Linkers between domains: ~5-15 residues
 - Loops: ~3-10 residues each
 
-**Distribution:**
-- ~30-40% in termini
-- ~20-30% in linkers
-- ~20-30% in long loops
-- ~10-20% scattered
-
 ---
 
 ## Common Issues
@@ -157,35 +152,15 @@ dpam run-step AF-P12345 --step DISORDER --working-dir ./work
 
 ---
 
-## Backward Compatibility
+## Key Parameters
 
-✅ **100% v1.0 compatible**
-- Contact criteria identical (sep >= 20, PAE < 6)
-- Window size identical (5 residues)
-- Contact threshold identical (≤ 5)
-- Hit threshold identical (≤ 2)
-- Output format identical
-
----
-
-## Quick Commands
-
-```bash
-# Run step 12
-dpam run-step AF-P12345 --step DISORDER --working-dir ./work
-
-# Count disordered residues
-wc -l work/AF-P12345.diso
-
-# View regions
-head -20 work/AF-P12345.diso
-
-# Check if specific residue is disordered
-grep "^100$" work/AF-P12345.diso
-
-# Find disordered regions (consecutive residues)
-awk '{if (NR==1) {prev=$1; start=$1} else {if ($1==prev+1) {prev=$1} else {print start"-"prev; start=$1; prev=$1}}} END {print start"-"prev}' work/AF-P12345.diso
-```
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Window size | 10 | Residues evaluated together |
+| Contact threshold | ≤ 30 | Max inter-SSE contacts for disorder |
+| Hit threshold | ≤ 5 | Max good domain residues for disorder |
+| Sequence separation | ≥ 10 | Min residue separation for contact |
+| PAE threshold | < 12 | Max PAE for confident contact |
 
 ---
 
@@ -214,40 +189,14 @@ awk '{if (NR==1) {prev=$1; start=$1} else {if ($1==prev+1) {prev=$1} else {print
 
 ---
 
-## Example Output
-
-**Input:**
-- Protein length: 500
-- SSEs: 20
-- Good domains: 3
-
-**Processing:**
-- Contacts calculated: ~250,000 pairs
-- Windows evaluated: 496
-- Disordered residues: 85 (17%)
-
-**Regions:**
-```
-1-15      (N-terminal tail)
-127-135   (loop)
-248-255   (linker)
-485-500   (C-terminal tail)
-```
-
----
-
 ## Summary
 
-Step 12 is **complete**, **fast**, and **v1.0-compatible**.
+Step 12 predicts disordered regions using a 10-residue sliding window approach that integrates secondary structure, PAE confidence, and good domain annotations.
 
 **Key metrics:**
-- ✅ 310 lines of code
+- ✅ ~340 lines of code
 - ✅ 5-20s execution time
-- ✅ 100% backward compatible
-- ✅ Handles both PAE formats
+- ✅ Handles both PAE formats (v4 and v6)
 - ✅ Integrates SSE, PAE, and domain data
-- ✅ Ready for production
 
 **Next:** Step 13 (Parse Domains) - final domain parsing using all previous outputs
-
-**Status:** Steps 1-12 complete (12/13 = 92%)
