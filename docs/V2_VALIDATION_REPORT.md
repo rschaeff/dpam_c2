@@ -2,16 +2,16 @@
 
 ## Executive Summary
 
-DPAM V2 has been validated against V1 using **9,865 SwissProt proteins** (10 batches of ~1,000 each). **V2 passes all 8 validation metrics** and is deemed a suitable replacement for V1.
+DPAM V2 has been validated against V1 using **9,936 SwissProt proteins** (10 batches of ~1,000 each). **V2 passes all 8 validation metrics** and is deemed a suitable replacement for V1.
 
 **Key Statistics:**
-- 94.8% domain detection rate (V2/V1)
-- 79.5% of V1 domains have high-quality V2 matches (Jaccard ≥0.8)
-- 94.2% T-group agreement for matched domains
-- 85.0% of proteins have identical domain counts
+- 95.4% domain detection rate (V2/V1)
+- 79.9% of V1 domains have high-quality V2 matches (Jaccard ≥0.8)
+- 94.0% T-group agreement for matched domains
+- 85.2% of proteins have identical domain counts
 
 **For high-confidence (`good_domain`) predictions only:**
-- 84.9% high-quality match rate (Jaccard ≥0.8)
+- 85.1% high-quality match rate (Jaccard ≥0.8)
 - 98.9% T-group agreement
 - 100% Judge agreement
 
@@ -39,14 +39,14 @@ DPAM V2 has been validated against V1 using **9,865 SwissProt proteins** (10 bat
 
 | Category | Metric | Threshold | Observed | Status |
 |----------|--------|-----------|----------|--------|
-| Coverage | Domain count ratio (V2/V1) | ≥90% | 94.8% | PASS |
-| Count Agreement | Exact same count | ≥80% | 85.0% | PASS |
-| Count Agreement | Within ±1 domain | ≥95% | 96.7% | PASS |
-| Boundary Agreement | High overlap (J≥0.8) | ≥75% | 79.5% | PASS |
-| Boundary Agreement | Mean Jaccard | ≥0.80 | 0.844 | PASS |
-| Classification | T-group agreement | ≥90% | 94.2% | PASS |
-| Classification | Judge agreement | ≥90% | 95.8% | PASS |
-| Missed Domains | V1 domains missed (J<0.2) | ≤10% | 6.3% | PASS |
+| Coverage | Domain count ratio (V2/V1) | ≥90% | 95.4% | PASS |
+| Count Agreement | Exact same count | ≥80% | 85.2% | PASS |
+| Count Agreement | Within ±1 domain | ≥95% | 96.9% | PASS |
+| Boundary Agreement | High overlap (J≥0.8) | ≥75% | 79.9% | PASS |
+| Boundary Agreement | Mean Jaccard | ≥0.80 | 0.848 | PASS |
+| Classification | T-group agreement | ≥90% | 94.0% | PASS |
+| Classification | Judge agreement | ≥90% | 95.7% | PASS |
+| Missed Domains | V1 domains missed (J<0.2) | ≤10% | 5.9% | PASS |
 
 ### Threshold Rationale
 
@@ -59,11 +59,11 @@ DPAM V2 has been validated against V1 using **9,865 SwissProt proteins** (10 bat
 
 ## Jaccard Distribution
 
-Based on 19,373 V1 domains compared against 18,360 V2 domains:
+Based on 19,400 V1 domains compared against 18,499 V2 domains:
 
-- **79.5%** of V1 domains have J ≥ 0.8 (high-quality match)
-- **6.3%** are completely missed (J < 0.2)
-- Mean Jaccard coefficient: **0.844**
+- **79.9%** of V1 domains have J ≥ 0.8 (high-quality match)
+- **5.9%** are completely missed (J < 0.2)
+- Mean Jaccard coefficient: **0.848**
 
 ## High-Confidence Domain Analysis (good_domain only)
 
@@ -73,21 +73,21 @@ Since `good_domain` is the most practically important category, we performed a f
 
 | Metric | All Domains | good_domain Only | Change |
 |--------|-------------|------------------|--------|
-| Proteins compared | 9,865 | 8,416 | - |
-| V1 domains | 19,373 | 15,188 | - |
-| V2 domains | 18,360 | 14,603 | - |
-| Domain ratio (V2/V1) | 94.8% | 96.1% | +1.3% |
-| High Jaccard (≥0.8) | 79.5% | 84.9% | **+5.4%** |
-| Missed (J<0.2) | 6.3% | 5.6% | -0.7% |
-| Mean Jaccard | 0.844 | 0.873 | +0.03 |
-| T-group agreement | 94.2% | **98.9%** | **+4.7%** |
-| Judge agreement | 95.8% | 100.0% | +4.2% |
-| Exact count match | 85.0% | 87.3% | +2.3% |
-| Within ±1 domain | 96.7% | 97.3% | +0.6% |
+| Proteins compared | 9,879 | 8,425 | - |
+| V1 domains | 19,400 | 15,198 | - |
+| V2 domains | 18,499 | 14,620 | - |
+| Domain ratio (V2/V1) | 95.4% | 96.2% | +0.8% |
+| High Jaccard (≥0.8) | 79.9% | 85.1% | **+5.2%** |
+| Missed (J<0.2) | 5.9% | 5.6% | -0.3% |
+| Mean Jaccard | 0.848 | 0.874 | +0.03 |
+| T-group agreement | 94.0% | **98.9%** | **+4.9%** |
+| Judge agreement | 95.7% | 100.0% | +4.3% |
+| Exact count match | 85.2% | 87.3% | +2.1% |
+| Within ±1 domain | 96.9% | 97.3% | +0.4% |
 
 ### Key good_domain Metrics
 
-- **High-quality match rate:** 84.9% of V1 good_domains have Jaccard ≥ 0.8
+- **High-quality match rate:** 85.1% of V1 good_domains have Jaccard ≥ 0.8
 - **Missed rate:** Only 5.6% of V1 good_domains not found in V2 (J < 0.2)
 - **T-group agreement:** 98.9% for matched good_domains
 - **Judge agreement:** 100% (by definition - both are good_domain)
@@ -105,6 +105,41 @@ The good_domain analysis reveals that **disagreements are concentrated in lower-
 4. **100% Judge agreement** - V2 correctly identifies the same high-confidence domains
 
 This strongly supports V2 as a V1 replacement for practical use cases that rely on high-confidence predictions.
+
+## MSA Depth Analysis
+
+We analyzed the correlation between Multiple Sequence Alignment (MSA) depth and prediction quality. MSA depth was measured using Neff (effective number of sequences) from HHblits profiles.
+
+### Neff Distribution (9,999 proteins)
+
+| Neff Range | Count | Percentage |
+|------------|-------|------------|
+| Neff < 1 | 0 | 0.0% |
+| Neff 1-3 | 84 | 0.8% |
+| Neff 3-6 | 659 | 6.6% |
+| Neff 6-9 | 3,630 | 36.3% |
+| Neff ≥ 9 | 5,626 | 56.3% |
+
+**Summary:** Mean Neff = 9.12, Median = 9.3, Range = 1.0-16.2
+
+### Neff vs Prediction Quality
+
+| Neff Bin | Count | Mean Jaccard | High J (≥0.8) |
+|----------|-------|--------------|---------------|
+| Neff < 3 | 83 | 0.725 | 57.8% |
+| Neff 3-6 | 654 | 0.823 | 70.3% |
+| Neff 6-9 | 3,613 | 0.890 | 82.7% |
+| Neff ≥ 9 | 5,586 | 0.911 | 85.5% |
+| **Overall** | **9,936** | **0.896** | **83.2%** |
+
+### Interpretation
+
+- **Strong correlation**: Higher MSA depth correlates with better V1/V2 agreement
+- **92.6% have good MSA depth** (Neff ≥ 6): Most SwissProt proteins have sufficient sequence diversity
+- **Low Neff proteins still perform reasonably**: Even proteins with Neff < 3 achieve 57.8% high Jaccard
+- **Diminishing returns above Neff 9**: Quality plateaus around 85% high Jaccard
+
+This analysis suggests that MSA depth is a useful predictor of prediction confidence, but DPAM V2 performs well across the full range of sequence diversity observed in SwissProt.
 
 ## Known Limitations
 
@@ -193,6 +228,12 @@ This is likely correct behavior - V2's ML model may be more accurate than V1's h
 - Used ecod_commons.f_group_assignments for T-group/X-group/F-group mappings
 - Validated V2 T-group labels against cluster T-groups (99.9% match)
 - Finding: V2 preserves structural classification even when selecting different templates
+
+### Analysis 8: MSA Depth Correlation
+- Extracted Neff (effective sequence count) from HHblits profiles for all proteins
+- Correlated Neff with Jaccard coefficient to assess prediction quality
+- Finding: Strong positive correlation - higher MSA depth improves prediction agreement
+- 92.6% of proteins have Neff ≥ 6 (good MSA depth)
 
 ## ECOD Hierarchy Level Analysis
 
