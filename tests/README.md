@@ -10,10 +10,12 @@ tests/
 ├── test_dependencies.py        # External tool and dependency tests
 ├── unit/                       # Fast unit tests (no external deps)
 │   ├── test_utils.py          # Range parsing, amino acids
-│   └── test_probability_funcs.py  # Step 13 probability functions
+│   ├── test_probability_funcs.py  # Step 13 probability functions
+│   └── test_batch.py          # BatchState, foldseek splitting, CLI
 ├── integration/                # Integration tests (require tools)
 │   ├── test_step01_prepare.py
 │   ├── test_step13_parse_domains.py
+│   ├── test_batch_runner.py   # Batch processing (foldseek, DALI, DOMASS)
 │   └── ...
 └── fixtures/                   # Test data
     ├── README.md
@@ -351,9 +353,9 @@ def test_step99_basic(test_prefix, working_dir, mytool_available):
 | Category | Files | Tests | Runtime | Coverage |
 |----------|-------|-------|---------|----------|
 | Dependencies | 1 | ~30 | <5s | N/A |
-| Unit | 2 | ~60 | <10s | >90% |
-| Integration | 2 | ~20 | ~2min | >70% |
-| **Total** | **5** | **~110** | **~2min** | **~80%** |
+| Unit | 3 | ~90 | <10s | >90% |
+| Integration | 3 | ~40 | ~2min | >70% |
+| **Total** | **7** | **~160** | **~2min** | **~80%** |
 
 ### Goals
 
