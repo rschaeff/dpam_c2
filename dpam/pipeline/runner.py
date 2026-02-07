@@ -18,6 +18,14 @@ from dpam.utils.logging_config import (
 
 logger = get_logger('pipeline')
 
+# Critical steps that halt the pipeline on failure
+# These steps have no fallback - if they fail, downstream steps cannot proceed
+CRITICAL_STEPS = {
+    PipelineStep.HHSEARCH,      # Step 2: No sequence homology = no HHsearch hits
+    PipelineStep.FOLDSEEK,      # Step 3: No structure search = no Foldseek hits
+    PipelineStep.ITERATIVE_DALI # Step 7: No DALI alignments = incomplete domain info
+}
+
 
 class DPAMPipeline:
     """
@@ -30,7 +38,9 @@ class DPAMPipeline:
         data_dir: Path,
         cpus: int = 1,
         resume: bool = True,
-        skip_addss: bool = False
+        skip_addss: bool = False,
+        scratch_dir: Path = None,
+        dali_workers: int = None
     ):
         """
         Initialize pipeline.
@@ -41,12 +51,16 @@ class DPAMPipeline:
             cpus: Number of CPUs to use
             resume: Resume from checkpoints if available
             skip_addss: Skip addss.pl secondary structure (PSIPRED not available)
+            scratch_dir: Local scratch dir for DALI temp I/O (default: NFS working dir)
+            dali_workers: DALI worker count (default: same as cpus)
         """
         self.working_dir = Path(working_dir)
         self.data_dir = Path(data_dir)
         self.cpus = cpus
         self.resume = resume
         self.skip_addss = skip_addss
+        self.scratch_dir = scratch_dir
+        self.dali_workers = dali_workers
         
         self.working_dir.mkdir(parents=True, exist_ok=True)
         
@@ -108,9 +122,17 @@ class DPAMPipeline:
                 error_msg = f"Step {step.name} failed"
                 state.mark_failed(step, error_msg)
                 state.save(state_file)
-                
-                # Continue to next step (don't break)
-                logger.warning(f"Continuing despite failure in {step.name}")
+
+                # Critical steps halt the pipeline - no fallback possible
+                if step in CRITICAL_STEPS:
+                    logger.error(
+                        f"CRITICAL STEP {step.name} FAILED - halting pipeline. "
+                        f"This step has no fallback; downstream steps cannot proceed."
+                    )
+                    break
+                else:
+                    # Non-critical steps: log warning and continue
+                    logger.warning(f"Non-critical step {step.name} failed, continuing...")
         
         logger.info(
             f"Pipeline completed for {prefix}: "
@@ -192,7 +214,9 @@ class DPAMPipeline:
         
         elif step == PipelineStep.ITERATIVE_DALI:
             from dpam.steps.step07_iterative_dali import run_step7
-            return run_step7(prefix, self.working_dir, self.data_dir, self.cpus)
+            return run_step7(prefix, self.working_dir, self.data_dir, self.cpus,
+                             scratch_dir=self.scratch_dir,
+                             dali_workers=self.dali_workers)
         
         elif step == PipelineStep.ANALYZE_DALI:
             from dpam.steps.step08_analyze_dali import run_step8

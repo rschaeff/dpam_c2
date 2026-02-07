@@ -172,13 +172,17 @@ class BatchRunner:
         data_dir: Path,
         cpus: int = 1,
         resume: bool = True,
-        skip_addss: bool = False
+        skip_addss: bool = False,
+        scratch_dir: Path = None,
+        dali_workers: int = None
     ):
         self.proteins = proteins
         self.working_dir = Path(working_dir)
         self.data_dir = Path(data_dir)
         self.cpus = cpus
         self.skip_addss = skip_addss
+        self.scratch_dir = scratch_dir
+        self.dali_workers = dali_workers
 
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
@@ -188,7 +192,9 @@ class BatchRunner:
             data_dir=self.data_dir,
             cpus=self.cpus,
             resume=False,  # We manage resume via BatchState
-            skip_addss=self.skip_addss
+            skip_addss=self.skip_addss,
+            scratch_dir=self.scratch_dir,
+            dali_workers=self.dali_workers
         )
 
         # Batch state for resume support
@@ -344,7 +350,9 @@ class BatchRunner:
             try:
                 success = run_step7(
                     protein, self.working_dir, self.data_dir,
-                    cpus=self.cpus, template_cache=template_cache
+                    cpus=self.cpus, template_cache=template_cache,
+                    scratch_dir=self.scratch_dir,
+                    dali_workers=self.dali_workers
                 )
                 if success:
                     self.state.mark_complete(

@@ -59,7 +59,12 @@ Examples:
                            help='Use JSON logging format')
     run_parser.add_argument('--skip-addss', action='store_true',
                            help='Skip addss.pl (requires PSIPRED). Set when PSIPRED unavailable.')
-    
+    run_parser.add_argument('--scratch-dir', type=Path, default=None,
+                           help='Local scratch dir for DALI temp I/O (default: NFS working dir)')
+    run_parser.add_argument('--dali-workers', type=int, default=None,
+                           help='DALI worker count (default: same as --cpus). '
+                                'DALI is I/O-bound; try 4x CPUs with local scratch.')
+
     # Run-step command
     step_parser = subparsers.add_parser('run-step', help='Run single pipeline step')
     step_parser.add_argument('prefix', help='Structure prefix')
@@ -76,7 +81,12 @@ Examples:
                             help='Log file path')
     step_parser.add_argument('--skip-addss', action='store_true',
                             help='Skip addss.pl (requires PSIPRED)')
-    
+    step_parser.add_argument('--scratch-dir', type=Path, default=None,
+                            help='Local scratch dir for DALI temp I/O (default: NFS working dir)')
+    step_parser.add_argument('--dali-workers', type=int, default=None,
+                            help='DALI worker count (default: same as --cpus). '
+                                 'DALI is I/O-bound; try 4x CPUs with local scratch.')
+
     # Batch command
     batch_parser = subparsers.add_parser('batch', help='Process multiple structures')
     batch_parser.add_argument('prefix_file', type=Path,
@@ -117,6 +127,11 @@ Examples:
                                   help='Use JSON logging format')
     batch_run_parser.add_argument('--skip-addss', action='store_true',
                                   help='Skip addss.pl (requires PSIPRED)')
+    batch_run_parser.add_argument('--scratch-dir', type=Path, default=None,
+                                  help='Local scratch dir for DALI temp I/O (default: NFS working dir)')
+    batch_run_parser.add_argument('--dali-workers', type=int, default=None,
+                                  help='DALI worker count (default: same as --cpus). '
+                                       'DALI is I/O-bound; try 4x CPUs with local scratch.')
 
     # SLURM submit command (protein-first array jobs)
     slurm_parser = subparsers.add_parser('slurm-submit', help='Submit SLURM job array')
@@ -157,6 +172,10 @@ Examples:
                                      help='Skip addss.pl (requires PSIPRED)')
     slurm_batch_parser.add_argument('--dry-run', action='store_true',
                                      help='Generate script without submitting')
+    slurm_batch_parser.add_argument('--scratch-dir', type=Path, default=None,
+                                     help='Local scratch dir for DALI temp I/O (default: /tmp for SLURM)')
+    slurm_batch_parser.add_argument('--dali-workers', type=int, default=None,
+                                     help='DALI worker count (default: min(cpus*4, 64) with scratch)')
 
     # Batch status command
     status_parser = subparsers.add_parser(
@@ -205,14 +224,18 @@ def run_pipeline(args) -> int:
     
     # Create pipeline
     skip_addss = getattr(args, 'skip_addss', False)
+    scratch_dir = getattr(args, 'scratch_dir', None)
+    dali_workers = getattr(args, 'dali_workers', None)
     pipeline = DPAMPipeline(
         working_dir=args.working_dir,
         data_dir=args.data_dir,
         cpus=args.cpus,
         resume=args.resume,
-        skip_addss=skip_addss
+        skip_addss=skip_addss,
+        scratch_dir=scratch_dir,
+        dali_workers=dali_workers
     )
-    
+
     # Run pipeline
     try:
         state = pipeline.run(args.prefix, steps=steps)
@@ -235,14 +258,18 @@ def run_single_step(args) -> int:
     logger.info(f"Running {step.name} for {args.prefix}")
 
     skip_addss = getattr(args, 'skip_addss', False)
+    scratch_dir = getattr(args, 'scratch_dir', None)
+    dali_workers = getattr(args, 'dali_workers', None)
     pipeline = DPAMPipeline(
         working_dir=args.working_dir,
         data_dir=args.data_dir,
         cpus=args.cpus,
         resume=False,
-        skip_addss=skip_addss
+        skip_addss=skip_addss,
+        scratch_dir=scratch_dir,
+        dali_workers=dali_workers
     )
-    
+
     try:
         success = pipeline.run_step(step, args.prefix)
         return 0 if success else 1
@@ -304,6 +331,8 @@ def run_batch_stepwise(args) -> int:
         steps = [PipelineStep[s] for s in args.steps]
 
     skip_addss = getattr(args, 'skip_addss', False)
+    scratch_dir = getattr(args, 'scratch_dir', None)
+    dali_workers = getattr(args, 'dali_workers', None)
 
     try:
         runner = BatchRunner(
@@ -312,7 +341,9 @@ def run_batch_stepwise(args) -> int:
             data_dir=args.data_dir,
             cpus=args.cpus,
             resume=args.resume,
-            skip_addss=skip_addss
+            skip_addss=skip_addss,
+            scratch_dir=scratch_dir,
+            dali_workers=dali_workers
         )
 
         runner.run(steps=steps)
@@ -365,6 +396,8 @@ def submit_slurm_batch(args) -> int:
         prefixes = [line.strip() for line in f if line.strip()]
 
     skip_addss = getattr(args, 'skip_addss', False)
+    scratch_dir = getattr(args, 'scratch_dir', None)
+    dali_workers = getattr(args, 'dali_workers', None)
 
     if args.dry_run:
         script = generate_batch_slurm_script(
@@ -375,7 +408,9 @@ def submit_slurm_batch(args) -> int:
             mem=args.mem,
             time_limit=args.time,
             partition=args.partition,
-            skip_addss=skip_addss
+            skip_addss=skip_addss,
+            scratch_dir=scratch_dir,
+            dali_workers=dali_workers
         )
         script_file = args.working_dir / 'dpam_batch.sh'
         with open(script_file, 'w') as f:
@@ -392,7 +427,9 @@ def submit_slurm_batch(args) -> int:
         mem=args.mem,
         time_limit=args.time,
         partition=args.partition,
-        skip_addss=skip_addss
+        skip_addss=skip_addss,
+        scratch_dir=scratch_dir,
+        dali_workers=dali_workers
     )
 
     print(f"Submitted batch job: {job_id}")

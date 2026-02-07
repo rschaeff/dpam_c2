@@ -82,23 +82,48 @@ def run_dali(args: Tuple) -> bool:
     Args:
         args: Tuple of (prefix, edomain, working_dir, data_dir)
               or (prefix, edomain, working_dir, data_dir, template_cache)
+              or (prefix, edomain, working_dir, data_dir, template_cache, scratch_base)
 
     Returns:
         True if any hits found
     """
-    if len(args) == 5:
+    if len(args) == 6:
+        prefix, edomain, working_dir, data_dir, template_cache, scratch_base = args
+    elif len(args) == 5:
         prefix, edomain, working_dir, data_dir, template_cache = args
+        scratch_base = None
     else:
         prefix, edomain, working_dir, data_dir = args
         template_cache = None
-    
+        scratch_base = None
+
     # Setup paths - use absolute paths to avoid directory confusion
     query_pdb = (working_dir / f'{prefix}.pdb').resolve()
-    # Use template cache if available, otherwise fall back to ECOD70/
-    if template_cache and (Path(template_cache) / f'{edomain}.pdb').exists():
+
+    # Resolve template source: local scratch cache > NFS template cache > ECOD70/
+    local_template = None
+    if scratch_base:
+        local_cache_dir = Path(scratch_base) / 'template_cache'
+        local_template = local_cache_dir / f'{edomain}.pdb'
+
+    if local_template and local_template.exists():
+        template_pdb_source = local_template.resolve()
+    elif template_cache and (Path(template_cache) / f'{edomain}.pdb').exists():
         template_pdb_source = (Path(template_cache) / f'{edomain}.pdb').resolve()
     else:
         template_pdb_source = (data_dir / 'ECOD70' / f'{edomain}.pdb').resolve()
+
+    # Populate local scratch template cache on miss (atomic write)
+    if local_template and not local_template.exists() and template_pdb_source.exists():
+        try:
+            local_cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp_file = local_cache_dir / f'.tmp.{os.getpid()}.{edomain}.pdb'
+            shutil.copy(template_pdb_source, tmp_file)
+            os.rename(str(tmp_file), str(local_template))
+            # Now use the local copy as source
+            template_pdb_source = local_template.resolve()
+        except OSError:
+            pass  # Race condition or disk issue; use NFS source
 
     # Check files exist
     if not query_pdb.exists():
@@ -108,14 +133,19 @@ def run_dali(args: Tuple) -> bool:
     if not template_pdb_source.exists():
         logger.warning(f"Template not found: {template_pdb_source}")
         return False
-    
+
     # Create working directories - match v1.0 structure
+    # Hit file always goes to NFS (small, read by orchestrator after all workers finish)
     iterative_dir = working_dir / f'iterativeDali_{prefix}'
     iterative_dir.mkdir(parents=True, exist_ok=True)
-    
-    tmp_dir = iterative_dir / f'tmp_{prefix}_{edomain}'
+
+    # Temp dir: use local scratch if available, otherwise NFS
+    if scratch_base:
+        tmp_dir = Path(scratch_base) / f'tmp_{prefix}_{edomain}'
+    else:
+        tmp_dir = iterative_dir / f'tmp_{prefix}_{edomain}'
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    
+
     output_tmp_dir = tmp_dir / 'output_tmp'
     output_tmp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -242,7 +272,9 @@ def run_step7(
     working_dir: Path,
     data_dir: Path,
     cpus: int = 1,
-    template_cache: Path = None
+    template_cache: Path = None,
+    scratch_dir: Path = None,
+    dali_workers: int = None
 ) -> bool:
     """
     Run Step 7: Iterative DALI alignment.
@@ -258,6 +290,12 @@ def run_step7(
         template_cache: Optional path to pre-cached template PDBs.
             If provided, templates are read from here instead of
             data_dir/ECOD70/, avoiding redundant NFS reads in batch mode.
+        scratch_dir: Optional local scratch directory for DALI temp I/O.
+            When set, temp files go to scratch_dir/dpam_dali_{prefix}/
+            instead of NFS. Hit files remain on NFS. Eliminates NFS
+            latency for DALI's 20-50 file ops per alignment.
+        dali_workers: Number of DALI worker processes. Defaults to cpus.
+            DALI is I/O-bound; try 4x CPUs when using local scratch.
 
     Returns:
         True if successful
@@ -267,6 +305,18 @@ def run_step7(
     # Convert paths to absolute to avoid relative path issues after chdir
     working_dir = Path(working_dir).resolve()
     data_dir = Path(data_dir).resolve()
+
+    # Determine worker count
+    pool_size = dali_workers if dali_workers else cpus
+
+    # Set up per-protein scratch directory
+    scratch_base = None
+    if scratch_dir:
+        scratch_dir = Path(scratch_dir).resolve()
+        scratch_base = scratch_dir / f'dpam_dali_{prefix}'
+        scratch_base.mkdir(parents=True, exist_ok=True)
+        (scratch_base / 'template_cache').mkdir(exist_ok=True)
+        logger.info(f"Using local scratch: {scratch_base}")
 
     # Change to working directory (v1.0 does this)
     original_cwd = os.getcwd()
@@ -297,29 +347,41 @@ def run_step7(
             logger.error(f"Hits file not found: {hits_file}")
             logger.error(f"Current directory contents: {list(Path('.').glob(f'{prefix}*'))}")
             return False
-        
+
         with open(hits_file, 'r') as f:
             edomains = [line.strip() for line in f if line.strip()]
-        
-        logger.info(f"Processing {len(edomains)} ECOD domains with {cpus} CPUs")
-        
+
+        logger.info(
+            f"Processing {len(edomains)} ECOD domains with "
+            f"{pool_size} workers (cpus={cpus})"
+        )
+
         # Prepare arguments for parallel processing
-        inputs = [(prefix, edomain, working_dir, data_dir, template_cache) for edomain in edomains]
-        
+        if scratch_base:
+            inputs = [
+                (prefix, edomain, working_dir, data_dir, template_cache, scratch_base)
+                for edomain in edomains
+            ]
+        else:
+            inputs = [
+                (prefix, edomain, working_dir, data_dir, template_cache)
+                for edomain in edomains
+            ]
+
         # Run in parallel (match v1.0 multiprocessing pattern)
-        with Pool(processes=cpus) as pool:
+        with Pool(processes=pool_size) as pool:
             results = pool.map(run_dali, inputs)
-        
+
         n_success = sum(1 for r in results if r)
         logger.info(f"Completed DALI for {n_success}/{len(edomains)} domains")
-        
+
         # Concatenate all hits files
         final_file = working_dir / f'{prefix}_iterativdDali_hits'
         with open(final_file, 'w') as outf:
             for hit_file in sorted(iterative_dir.glob(f'{prefix}_*_hits')):
                 with open(hit_file, 'r') as inf:
                     outf.write(inf.read())
-        
+
         logger.info(f"Wrote combined hits to {final_file}")
 
         # Clean up temporary directories (match v1.0)
@@ -328,19 +390,22 @@ def run_step7(
 
         # Remove main iterative directory (match v1.0)
         shutil.rmtree(iterative_dir, ignore_errors=True)
-        
+
         # Mark as done
         with open(done_file, 'w') as f:
             f.write('done\n')
-        
+
         logger.info(f"Step 7 completed successfully for {prefix}")
         return True
-    
+
     except Exception as e:
         logger.error(f"Step 7 failed for {prefix}: {e}")
         return False
-    
+
     finally:
+        # Clean up per-protein scratch directory
+        if scratch_base and scratch_base.exists():
+            shutil.rmtree(scratch_base, ignore_errors=True)
         # Restore original directory
         os.chdir(original_cwd)
 

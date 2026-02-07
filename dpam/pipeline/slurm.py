@@ -180,7 +180,9 @@ def generate_batch_slurm_script(
     time_limit: str = '24:00:00',
     partition: Optional[str] = None,
     log_dir: Optional[Path] = None,
-    skip_addss: bool = False
+    skip_addss: bool = False,
+    scratch_dir: Optional[Path] = None,
+    dali_workers: Optional[int] = None
 ) -> str:
     """
     Generate SLURM script for step-first batch processing.
@@ -199,6 +201,8 @@ def generate_batch_slurm_script(
         partition: SLURM partition
         log_dir: Directory for logs
         skip_addss: Skip addss.pl (PSIPRED not available)
+        scratch_dir: Local scratch dir for DALI temp I/O (default: /tmp for SLURM)
+        dali_workers: DALI worker count (default: min(cpus*4, 64) when scratch_dir is set)
 
     Returns:
         SLURM script as string
@@ -229,6 +233,14 @@ def generate_batch_slurm_script(
 
     addss_flag = " \\\n  --skip-addss" if skip_addss else ""
 
+    # Default scratch to /tmp for SLURM (local xfs on all leda nodes, 156GB+ free)
+    effective_scratch = scratch_dir if scratch_dir else Path("/tmp")
+    # Default dali_workers to min(cpus*4, 64) when scratch is set
+    effective_dali_workers = dali_workers if dali_workers else min(cpus * 4, 64)
+
+    scratch_flag = f" \\\n  --scratch-dir {effective_scratch}"
+    workers_flag = f" \\\n  --dali-workers {effective_dali_workers}"
+
     script_lines.extend([
         "",
         "# CRITICAL: Unset OMP vars for foldseek compatibility",
@@ -251,7 +263,7 @@ def generate_batch_slurm_script(
         f"  --cpus $SLURM_CPUS_PER_TASK \\",
         f"  --resume \\",
         f"  --log-file {log_dir}/batch.log \\",
-        f"  --json-log{addss_flag}",
+        f"  --json-log{addss_flag}{scratch_flag}{workers_flag}",
         "",
         "exit $?",
     ])
@@ -267,7 +279,9 @@ def submit_batch_slurm(
     mem: str = '64G',
     time_limit: str = '24:00:00',
     partition: Optional[str] = None,
-    skip_addss: bool = False
+    skip_addss: bool = False,
+    scratch_dir: Optional[Path] = None,
+    dali_workers: Optional[int] = None
 ) -> str:
     """
     Submit single-node step-first batch SLURM job.
@@ -281,6 +295,8 @@ def submit_batch_slurm(
         time_limit: Time limit
         partition: SLURM partition
         skip_addss: Skip addss.pl
+        scratch_dir: Local scratch dir for DALI temp I/O (default: /tmp for SLURM)
+        dali_workers: DALI worker count (default: min(cpus*4, 64) when scratch is set)
 
     Returns:
         Job ID
@@ -298,7 +314,9 @@ def submit_batch_slurm(
         mem=mem,
         time_limit=time_limit,
         partition=partition,
-        skip_addss=skip_addss
+        skip_addss=skip_addss,
+        scratch_dir=scratch_dir,
+        dali_workers=dali_workers
     )
 
     script_file = working_dir / 'dpam_batch.sh'
