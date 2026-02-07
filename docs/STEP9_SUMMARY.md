@@ -196,8 +196,9 @@ Find best sequence probability and coverage for structure hit.
 ### `process_structure_hits(good_hits_file, fam2hits)`
 Add sequence support to all DALI hits.
 
-### `run_step9(prefix, working_dir, reference_data)`
+### `run_step9(prefix, working_dir, reference_data, path_resolver=None)`
 Main entry point.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
 
 ---
 

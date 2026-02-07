@@ -131,8 +131,9 @@ Map single HHsearch hit to ECOD domain.
 
 **Returns:** List[ECODMapping] (0 or 1 element)
 
-### `run_step5(prefix, working_dir, reference_data)`
+### `run_step5(prefix, working_dir, reference_data, path_resolver=None)`
 Main entry point. Processes all HHsearch alignments.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
 
 ---
 

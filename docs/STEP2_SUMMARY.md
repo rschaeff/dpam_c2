@@ -75,6 +75,7 @@ pdb70/                   # PDB70 database for hhsearch
 | `skip_addss` | False | Skip secondary structure prediction |
 | `uniref_db` | Auto | Direct path to UniRef database |
 | `pdb70_db` | Auto | Direct path to PDB70 database |
+| `path_resolver` | None | Optional `PathResolver` for sharded output layout |
 
 ---
 
@@ -139,6 +140,11 @@ rsync -a $UNIREF_SRC/ $TMPDIR/UniRef30_2022_02/
 **External Tools (Optional):**
 - `addss.pl` - HH-suite secondary structure script
 - `psipred` - Secondary structure predictor (required by addss.pl)
+
+**Custom Configuration:**
+- `dpam/tools/scripts/HHPaths.pm` - Custom path configuration for addss.pl
+- The default system HHPaths.pm does not work; DPAM uses its own version
+- See `docs/DEPENDENCIES.md` for details on customizing HHPaths.pm
 
 ---
 

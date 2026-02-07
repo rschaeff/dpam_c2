@@ -91,6 +91,14 @@ dpam run-step AF-P12345 --step PARSE_DOMAINS --working-dir ./work
 
 ---
 
+## Key Functions
+
+### `run_step13(prefix, working_dir, path_resolver=None)`
+Main entry point. Runs complete domain parsing algorithm.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
+
+---
+
 ## Key Parameters
 
 | Parameter | Value | Description |

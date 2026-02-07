@@ -152,6 +152,14 @@ dpam run-step AF-P12345 --step DISORDER --working-dir ./work
 
 ---
 
+## Key Functions
+
+### `run_step12(prefix, working_dir, path_resolver=None)`
+Main entry point. Predicts disordered regions.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
+
+---
+
 ## Key Parameters
 
 | Parameter | Value | Description |

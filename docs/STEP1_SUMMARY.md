@@ -65,8 +65,10 @@ def extract_sequence(prefix: str, working_dir: Path) -> bool
 def standardize_structure(prefix: str, working_dir: Path) -> bool
     """Create standardized PDB with validation."""
 
-def run_step1(prefix: str, working_dir: Path) -> bool
-    """Main entry point - runs both phases."""
+def run_step1(prefix: str, working_dir: Path, path_resolver=None) -> bool
+    """Main entry point - runs both phases.
+    path_resolver: Optional PathResolver for sharded output layout.
+    """
 ```
 
 ---

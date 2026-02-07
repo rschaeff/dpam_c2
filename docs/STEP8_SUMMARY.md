@@ -123,8 +123,9 @@ Calculate scores and percentiles for all hits.
 ### `calculate_ranks_and_ranges(analyzed_hits)`
 Incremental family tracking and range conversion.
 
-### `run_step8(prefix, working_dir, reference_data, data_dir)`
+### `run_step8(prefix, working_dir, reference_data, data_dir, path_resolver=None)`
 Main entry point.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
 
 ---
 

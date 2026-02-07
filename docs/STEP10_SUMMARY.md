@@ -189,8 +189,9 @@ Filter sequence hits by segment length.
 ### `process_structure_hits(structure_file, reference_data, prefix)`
 Filter structure hits by quality score and segment length.
 
-### `run_step10(prefix, working_dir, reference_data)`
+### `run_step10(prefix, working_dir, reference_data, path_resolver=None)`
 Main entry point.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
 
 ---
 

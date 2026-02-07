@@ -96,8 +96,9 @@ Extract ECOD UIDs from foldseek.flt.result.
 
 **Returns:** Set[str] of domain IDs
 
-### `run_step6(prefix, working_dir)`
+### `run_step6(prefix, working_dir, path_resolver=None)`
 Main entry point. Merges and writes candidates.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
 
 ---
 

@@ -100,8 +100,9 @@ ecodnum     evalue      range
 
 ## Key Functions
 
-### `run_step4(prefix, working_dir)`
+### `run_step4(prefix, working_dir, path_resolver=None)`
 Main entry point. Orchestrates filtering process.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
 
 **Algorithm:**
 1. Read FASTA to get query length

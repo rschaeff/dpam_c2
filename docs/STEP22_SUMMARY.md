@@ -161,11 +161,12 @@ Compute transitive closure via iterative merging.
 - **Input:** List of domain pairs (sets of 2 names)
 - **Output:** List of merged groups (sets of N names)
 
-### `run_step22(prefix, working_dir)`
+### `run_step22(prefix, working_dir, path_resolver=None)`
 Main entry point.
 - Loads validated pairs
 - Computes transitive closure
 - Writes merged groups with combined ranges
+- `path_resolver`: Optional `PathResolver` for sharded output layout
 
 ---
 

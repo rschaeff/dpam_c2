@@ -113,6 +113,14 @@ dpam run-step AF-P12345 --step SSE --working-dir ./work
 
 ---
 
+## Key Functions
+
+### `run_step11(prefix, working_dir, path_resolver=None)`
+Main entry point. Runs DSSP and parses SSE elements.
+`path_resolver`: Optional `PathResolver` for sharded output layout.
+
+---
+
 ## Common Issues
 
 ### DSSP not found
