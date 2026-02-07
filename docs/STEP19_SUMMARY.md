@@ -253,6 +253,15 @@ Support (1) > Opposition (0)? Yes -> VALIDATED
 
 ---
 
+## Key Functions
+
+```python
+def run_step19(prefix, working_dir, data_dir, path_resolver=None, **kwargs) -> bool
+    # path_resolver: Optional PathResolver for sharded output layout.
+```
+
+---
+
 ## Backward Compatibility
 
 **100% v1.0 compatible**

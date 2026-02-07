@@ -179,6 +179,15 @@ D1	10-150	2.30.30	e1abc1	141	3	5	0.950	0.850	0.30	2.530	0.850	0.120	0.050	0.12	1
 
 ---
 
+## Key Functions
+
+```python
+def run_step15(prefix, working_dir, data_dir, path_resolver=None, **kwargs) -> bool
+    # path_resolver: Optional PathResolver for sharded output layout.
+```
+
+---
+
 ## Backward Compatibility
 
 **100% v1.0 compatible**

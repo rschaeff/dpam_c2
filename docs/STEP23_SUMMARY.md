@@ -161,8 +161,8 @@ For merged domains, best quality is selected (good > ok > bad).
 Load position-specific weights for ECOD template.
 Returns dict of residue -> weight and total weight.
 
-### `run_step23(prefix, working_dir, data_dir)`
-Main classification function.
+### `run_step23(prefix, working_dir, data_dir, path_resolver=None, **kwargs) -> bool`
+Main classification function. `path_resolver`: Optional PathResolver for sharded output layout.
 Processes merged and single domains.
 
 ---

@@ -154,8 +154,8 @@ Count helices (>=6 res) and strands (>=3 res) in domain.
 ### `refine_classification(original_class, sse_count, hh_prob, weighted_ratio, length_ratio)`
 Apply SSE-based refinement to get final label.
 
-### `run_step24(prefix, working_dir, data_dir)`
-Main integration function.
+### `run_step24(prefix, working_dir, data_dir, path_resolver=None, **kwargs) -> bool`
+Main integration function. `path_resolver`: Optional PathResolver for sharded output layout.
 
 ---
 

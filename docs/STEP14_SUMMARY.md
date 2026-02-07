@@ -36,6 +36,12 @@ Same as Step 13:
 
 ---
 
+## Path Resolver
+
+The `path_resolver` parameter is passed through from the Step 13 implementation. See **STEP13_SUMMARY.md** for details.
+
+---
+
 ## See Also
 
 Refer to **STEP13_SUMMARY.md** for full algorithm documentation.

@@ -145,6 +145,9 @@ Returns dict mapping residue ID to list of [x,y,z] coordinates.
 ### `get_structure_distance(pdb1, pdb2, resids_a, resids_b)`
 Count residue pairs with inter-atomic distance <= 8A.
 
+### `run_step21(prefix, working_dir, path_resolver=None, **kwargs) -> bool`
+Main comparison function. `path_resolver`: Optional PathResolver for sharded output layout.
+
 ---
 
 ## Typical Statistics

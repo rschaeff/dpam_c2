@@ -160,6 +160,37 @@ Both methods are used together to maximize coverage of ECOD domain assignments.
 
 ---
 
+## Key Functions
+
+```python
+def run_step3(prefix, working_dir, data_dir, threads=1, path_resolver=None) -> bool
+    # Single-protein foldseek easy-search.
+    # path_resolver: Optional PathResolver for sharded output layout.
+
+def run_step3_batch(proteins, working_dir, data_dir, threads=1, path_resolver=None) -> Dict[str, bool]
+    # Batch foldseek using createdb + search + convertalis.
+    # Returns dict mapping prefix -> success.
+```
+
+---
+
+## Batch Mode
+
+For multi-protein runs, `run_step3_batch()` replaces per-protein `easy-search` with a bulk workflow:
+
+1. **`createdb`** - Build a single query database from all protein PDB files
+2. **`search`** - Run one search against the ECOD foldseek database
+3. **`convertalis`** - Convert results to tabular format
+4. **Split results** - Partition combined output by query name (column 1) into per-protein `.foldseek` files
+
+**Speedup:** ~2.7x with 10 proteins; scales better with more proteins (index load amortized once).
+
+Results are identical to `easy-search` (verified on 10 proteins, all hit counts match).
+
+Used automatically by `dpam batch-run` (step-first mode).
+
+---
+
 ## Backward Compatibility
 
 Matches v1.0 Foldseek step:

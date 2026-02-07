@@ -209,6 +209,49 @@ Tested with TensorFlow 2.x (uses v1 API).
 
 ---
 
+## Key Functions
+
+```python
+def run_step16(prefix, working_dir, data_dir, model=None, path_resolver=None, **kwargs) -> bool
+    # model: Optional pre-loaded DomassModel for batch reuse.
+    # path_resolver: Optional PathResolver for sharded output layout.
+```
+
+### DomassModel Class
+
+Reusable TensorFlow model session for batch processing. Loads the model graph and checkpoint once; call `predict()` for each protein's features.
+
+```python
+class DomassModel:
+    def __init__(self, model_path: Path)
+    def predict(self, features: np.ndarray) -> np.ndarray
+    def close(self)
+    # Context manager support (__enter__, __exit__)
+```
+
+**Usage:**
+```python
+with DomassModel(data_dir / "domass_epo29") as model:
+    for prefix in proteins:
+        run_step16(prefix, working_dir, data_dir, model=model)
+```
+
+---
+
+## Batch Mode
+
+For multi-protein runs, the `DomassModel` class eliminates repeated TF model loading:
+
+- **TF model load:** ~22s on cold start (SLURM nodes)
+- **Per-protein inference:** <10ms
+- **Speedup:** ~628x per-protein (22s vs 0.035s when model pre-loaded)
+
+Must call `tf.compat.v1.disable_eager_execution()` before building TF1 graph in TF2 environment. The `DomassModel` constructor handles this automatically.
+
+Used automatically by `dpam batch-run` (step-first mode) via `BatchRunner._run_domass_batch()`.
+
+---
+
 ## Backward Compatibility
 
 **100% v1.0 compatible**
@@ -217,6 +260,7 @@ Tested with TensorFlow 2.x (uses v1 API).
 - Same layer names (dense, dense_1)
 - Same feature indexing
 - Same probability output
+- Predictions are bit-identical between batch and single-protein mode
 
 ---
 
