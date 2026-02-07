@@ -54,7 +54,20 @@ dpam run-step AF-P12345 \
 
 ### Batch Processing
 ```bash
-# Local parallel processing
+# Step-first batch processing (recommended for multi-protein runs)
+# Loads expensive resources (foldseek index, DALI templates, TF model)
+# once per step rather than once per protein. ~25x faster than protein-first.
+dpam batch-run prefixes.txt \
+  --working-dir ./work \
+  --data-dir /path/to/ecod_data \
+  --cpus 8 \
+  --resume \
+  --skip-addss
+
+# Monitor batch progress
+dpam batch-status --working-dir ./work
+
+# Local parallel processing (protein-first, legacy)
 dpam batch prefixes.txt \
   --working-dir ./work \
   --data-dir /path/to/ecod_data \
@@ -63,7 +76,17 @@ dpam batch prefixes.txt \
   --resume \
   --log-dir ./logs
 
-# SLURM cluster submission
+# SLURM: step-first batch on single node (recommended)
+dpam slurm-batch prefixes.txt \
+  --working-dir ./work \
+  --data-dir /path/to/ecod_data \
+  --cpus 16 \
+  --mem 64G \
+  --partition compute \
+  --skip-addss \
+  --dry-run  # Preview script without submitting
+
+# SLURM: protein-first array jobs (legacy)
 dpam slurm-submit prefixes.txt \
   --working-dir ./work \
   --data-dir /path/to/ecod_data \
@@ -159,7 +182,7 @@ dpam/
 ├── io/             # Readers (Gemmi-based CIF/PDB), writers, parsers (tool outputs)
 ├── tools/          # Wrappers for external tools (HHsuite, Foldseek, DALI, DSSP)
 ├── steps/          # Pipeline step implementations (step01-step24)
-├── pipeline/       # Orchestration (runner, batch, slurm)
+├── pipeline/       # Orchestration (runner, batch_runner, slurm)
 ├── cli/            # Command-line interface
 └── utils/          # Utilities (ranges, amino acids, logging)
 ```
@@ -170,6 +193,8 @@ dpam/
 - **State management is external**: Pipeline state tracked in `.{prefix}.dpam_state.json` files, not in Python objects. Enables resume across process restarts.
 - **Tool abstraction prevents mocking issues**: All external tools inherit from `ExternalTool` base class in `tools/base.py` with `check_availability()` and `run_command()` methods.
 - **Dynamic step execution**: `DPAMPipeline._execute_step()` uses if/elif chain to import step modules dynamically. To add a new step, update `PipelineStep` enum in `core/models.py` and add corresponding elif branch in `pipeline/runner.py:_execute_step()`.
+- **Step-first batch mode**: `BatchRunner` in `pipeline/batch_runner.py` processes all proteins through each step before moving to the next. Three steps have batch-optimized implementations (FOLDSEEK: bulk `createdb`+`search`+`convertalis`; ITERATIVE_DALI: shared template cache; RUN_DOMASS: shared TF model). All other steps fall through to per-protein execution via `DPAMPipeline.run_step()`.
+- **Batch state tracking**: `BatchState` tracks `(step, protein)` progress in `_batch_state.json`. Also updates per-protein `.dpam_state.json` files, so `dpam run --resume` and `dpam batch-run --resume` are cross-compatible.
 
 ### Pipeline Steps (1-25)
 
@@ -346,6 +371,12 @@ data/
 - Step 7: 8-16 CPUs, 8-16GB memory, ~1.4h (scales near-linearly up to 8-16 CPUs)
 - Steps 8-13: 1-4 CPUs, 4GB memory, ~30min
 
+**Batch Mode Speedups** (step-first vs protein-first):
+- **Foldseek**: ~2.7x faster (DB index loaded once via `createdb`+`search`+`convertalis`)
+- **DALI**: Template caching eliminates redundant NFS copies across proteins
+- **DOMASS**: ~628x per-protein speedup (TF model loaded once, ~22s saved per protein)
+- See `docs/BATCH_MODE_REFACTOR.md` for performance analysis
+
 ## File I/O Patterns
 
 **Input**: Structure files (`.cif` or `.pdb`) and AlphaFold JSON (`.json` with PAE) placed in working directory.
@@ -371,6 +402,7 @@ Structured logging via `utils/logging_config.py`:
 **Core documentation** in `docs/`:
 - **V2_VALIDATION_REPORT.md**: Comprehensive V1 vs V2 validation results
 - **ARCHITECTURE.md**: System architecture and data flow
+- **BATCH_MODE_REFACTOR.md**: Step-first batch processing design and performance analysis
 - **IMPLEMENTATION_GUIDE.md**: Developer guide for adding steps
 - **ML_PIPELINE_SETUP.md**: TensorFlow model configuration
 - **KNOWN_ISSUES.md**: Current known issues and workarounds

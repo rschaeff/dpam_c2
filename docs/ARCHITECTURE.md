@@ -9,22 +9,32 @@
 │                                                                   │
 │  CLI Commands:                                                   │
 │  • dpam run <prefix>              → Single structure            │
-│  • dpam batch <file>              → Local parallel              │
-│  • dpam slurm-submit <file>       → HPC cluster                 │
+│  • dpam batch-run <file>          → Step-first batch (fast)     │
+│  • dpam batch <file>              → Protein-first parallel      │
+│  • dpam slurm-batch <file>        → SLURM step-first batch     │
+│  • dpam slurm-submit <file>       → SLURM array jobs            │
+│  • dpam batch-status              → Monitor batch progress      │
 │  • dpam run-step <prefix> --step  → Individual step             │
 │                                                                   │
 └────────────────────────┬────────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Pipeline Orchestrator                         │
+│                    Pipeline Orchestrators                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  DPAMPipeline                                                    │
+│  DPAMPipeline (protein-first)                                    │
 │  ├─ Checkpointing (.dpam_state.json)                           │
 │  ├─ Error handling (continue on failure)                        │
 │  ├─ Progress tracking                                            │
-│  └─ Step execution                                               │
+│  └─ Step execution (per protein)                                │
+│                                                                   │
+│  BatchRunner (step-first)                                        │
+│  ├─ Step-first orchestration (_batch_state.json)               │
+│  ├─ Optimized: FOLDSEEK (bulk search), DALI (template cache), │
+│  │   DOMASS (shared TF model)                                    │
+│  ├─ Cross-mode state sync (batch ↔ per-protein)                │
+│  └─ Default: per-protein fallback via DPAMPipeline             │
 │                                                                   │
 └────────────────────────┬────────────────────────────────────────┘
                          │
@@ -32,7 +42,8 @@
         ▼                ▼                ▼
    ┌─────────┐    ┌─────────┐     ┌─────────┐
    │ Batch   │    │  SLURM  │     │ Single  │
-   │Processor│    │ Manager │     │   Run   │
+   │ Runner  │    │ Manager │     │   Run   │
+   │(step-1st│    │         │     │         │
    └─────────┘    └─────────┘     └─────────┘
         │                │                │
         └────────────────┴────────────────┘
@@ -187,9 +198,9 @@ AF-P12345.json   ─┤
 ```
 cli/main.py
     │
-    ├─▶ pipeline/runner.py
+    ├─▶ pipeline/runner.py          (protein-first orchestration)
     │       │
-    │       ├─▶ steps/step01-13.py
+    │       ├─▶ steps/step01-24.py
     │       │       │
     │       │       ├─▶ tools/{hhsuite,foldseek,dali,dssp}.py
     │       │       │       │
@@ -205,11 +216,19 @@ cli/main.py
     │               │
     │               └─▶ core/models.py
     │
-    ├─▶ pipeline/batch.py
+    ├─▶ pipeline/batch_runner.py    (step-first orchestration)
+    │       │
+    │       ├─▶ pipeline/runner.py  (for default per-protein fallback)
+    │       │
+    │       ├─▶ steps/step03_foldseek.py    (run_step3_batch)
+    │       ├─▶ steps/step07_iterative_dali.py (template_cache param)
+    │       └─▶ steps/step16_run_domass.py  (DomassModel context mgr)
+    │
+    ├─▶ pipeline/batch.py           (protein-first local parallel)
     │       │
     │       └─▶ pipeline/runner.py
     │
-    └─▶ pipeline/slurm.py
+    └─▶ pipeline/slurm.py          (SLURM array + batch submission)
             │
             └─▶ utils/logging_config.py
 ```
@@ -231,7 +250,36 @@ Main Process
             └─ ...
 ```
 
-### SLURM Array Processing
+### Step-First Batch Processing (`dpam batch-run`)
+```
+BatchRunner (single process)
+    │
+    ├─▶ Step 3 (FOLDSEEK): Batch-optimized
+    │   ├─ createdb: All PDBs → single query DB
+    │   ├─ search: One search against ECOD index (loaded once)
+    │   ├─ convertalis: Extract results
+    │   └─ Split: Per-protein .foldseek files
+    │
+    ├─▶ Step 7 (DALI): Template cache
+    │   ├─ Scan _hits4Dali: Collect all unique templates
+    │   ├─ Bulk copy: ECOD70/ → shared cache dir (once)
+    │   ├─ Per-protein: run_step7() with template_cache path
+    │   └─ Cleanup: Remove cache dir
+    │
+    ├─▶ Step 16 (DOMASS): Shared TF model
+    │   ├─ Load: TF model + session (once, ~22s)
+    │   ├─ Per-protein: Inference (<10ms each)
+    │   └─ Teardown: Close session
+    │
+    └─▶ All other steps: Per-protein via DPAMPipeline.run_step()
+
+State tracking:
+- _batch_state.json: (step, protein) → "complete"|"failed"
+- .{protein}.dpam_state.json: Updated in sync for cross-mode compat
+- Critical failures (HHSEARCH/FOLDSEEK/DALI) skip downstream steps
+```
+
+### SLURM Array Processing (`dpam slurm-submit`)
 ```
 SLURM Controller
     │

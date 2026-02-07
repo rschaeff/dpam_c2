@@ -7,6 +7,7 @@
 | [V2_VALIDATION_REPORT.md](V2_VALIDATION_REPORT.md) | Comprehensive V1 vs V2 validation results (~10,000 proteins) |
 | [PAPER_VS_IMPLEMENTATION.md](PAPER_VS_IMPLEMENTATION.md) | Comparison of published paper vs V1 vs V2 algorithm |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture, data flow, and design patterns |
+| [BATCH_MODE_REFACTOR.md](BATCH_MODE_REFACTOR.md) | Step-first batch processing design and performance analysis |
 | [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) | Guide for adding new pipeline steps |
 | [ML_PIPELINE_SETUP.md](ML_PIPELINE_SETUP.md) | TensorFlow model configuration and setup |
 | [INSTALLATION.md](INSTALLATION.md) | Detailed installation instructions |
