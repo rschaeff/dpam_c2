@@ -64,6 +64,16 @@ dpam batch-run prefixes.txt \
   --resume \
   --skip-addss
 
+# With local scratch for DALI I/O optimization (recommended on SLURM nodes)
+dpam batch-run prefixes.txt \
+  --working-dir ./work \
+  --data-dir /path/to/ecod_data \
+  --cpus 8 \
+  --resume \
+  --skip-addss \
+  --scratch-dir /tmp \
+  --dali-workers 32
+
 # Monitor batch progress
 dpam batch-status --working-dir ./work
 
@@ -77,6 +87,7 @@ dpam batch prefixes.txt \
   --log-dir ./logs
 
 # SLURM: step-first batch on single node (recommended)
+# Automatically uses --scratch-dir /tmp and --dali-workers min(cpus*4, 64)
 dpam slurm-batch prefixes.txt \
   --working-dir ./work \
   --data-dir /path/to/ecod_data \
@@ -99,6 +110,9 @@ dpam slurm-submit prefixes.txt \
 
 **CRITICAL - SLURM I/O Performance:**
 The SLURM submission automatically copies the UniRef30 database (~260GB) to each node's local scratch space before running. HHblits is extremely I/O intensive - running hundreds of jobs against a shared NFS mount will saturate network bandwidth and destroy cluster performance for all users. Database copy takes 2-5 minutes but prevents hours of NFS thrashing. The generated SLURM script in `dpam/pipeline/slurm.py` handles this automatically via rsync to `$TMPDIR` or `/tmp/slurm-$SLURM_JOB_ID`.
+
+**DALI Local Scratch I/O:**
+DALI alignment generates 20-50 file operations per candidate domain. For a typical protein with ~200 candidates, that's 4,000-10,000 NFS operations per protein. The `--scratch-dir` option redirects DALI temp I/O to local disk (e.g., `/tmp`), eliminating NFS latency. Hit files remain on NFS for orchestrator reads. The `--dali-workers` option oversubscribes workers beyond `--cpus` since DALI is I/O-bound, not CPU-bound. For SLURM batch jobs (`dpam slurm-batch`), scratch defaults to `/tmp` and dali_workers defaults to `min(cpus*4, 64)` automatically. See `docs/DALI_LOCAL_SCRATCH_REFACTOR.md` for full analysis.
 
 ### Manual SLURM Array Job Template
 
@@ -142,6 +156,8 @@ fi
 unset OMP_PROC_BIND
 
 # Run pipeline - use Python invocation since 'dpam' may not be in PATH
+# --scratch-dir /tmp redirects DALI temp I/O to local disk (avoids NFS latency)
+# --dali-workers 32 oversubscribes since DALI is I/O-bound, not CPU-bound
 cd /home/rschaeff/dev/dpam_c2
 python3 -c "
 import sys
@@ -149,7 +165,9 @@ sys.argv = ['dpam', 'run', '$PREFIX',
     '--working-dir', '/path/to/working_dir',
     '--data-dir', '/home/rschaeff_1/data/dpam_reference/ecod_data',
     '--cpus', '8',
-    '--resume']
+    '--resume',
+    '--scratch-dir', '/tmp',
+    '--dali-workers', '32']
 from dpam.cli.main import main
 main()
 "
@@ -193,7 +211,7 @@ dpam/
 - **State management is external**: Pipeline state tracked in `.{prefix}.dpam_state.json` files, not in Python objects. Enables resume across process restarts.
 - **Tool abstraction prevents mocking issues**: All external tools inherit from `ExternalTool` base class in `tools/base.py` with `check_availability()` and `run_command()` methods.
 - **Dynamic step execution**: `DPAMPipeline._execute_step()` uses if/elif chain to import step modules dynamically. To add a new step, update `PipelineStep` enum in `core/models.py` and add corresponding elif branch in `pipeline/runner.py:_execute_step()`.
-- **Step-first batch mode**: `BatchRunner` in `pipeline/batch_runner.py` processes all proteins through each step before moving to the next. Three steps have batch-optimized implementations (FOLDSEEK: bulk `createdb`+`search`+`convertalis`; ITERATIVE_DALI: shared template cache; RUN_DOMASS: shared TF model). All other steps fall through to per-protein execution via `DPAMPipeline.run_step()`.
+- **Step-first batch mode**: `BatchRunner` in `pipeline/batch_runner.py` processes all proteins through each step before moving to the next. Three steps have batch-optimized implementations (FOLDSEEK: bulk `createdb`+`search`+`convertalis`; ITERATIVE_DALI: shared template cache + local scratch I/O; RUN_DOMASS: shared TF model). All other steps fall through to per-protein execution via `DPAMPipeline.run_step()`.
 - **Batch state tracking**: `BatchState` tracks `(step, protein)` progress in `_batch_state.json`. Also updates per-protein `.dpam_state.json` files, so `dpam run --resume` and `dpam batch-run --resume` are cross-compatible.
 
 ### Pipeline Steps (1-25)
@@ -363,17 +381,18 @@ data/
 
 **Bottleneck Steps**:
 - **Step 2 (HHSEARCH)**: CPU-bound, parallelizes with `--cpus` (30-60 min typical, 90-95% of steps 1-6 time)
-- **Step 7 (ITERATIVE_DALI)**: I/O + CPU-bound, uses multiprocessing.Pool (1-3h with 8 CPUs, ~400 domains × 2.5 iterations avg)
+- **Step 7 (ITERATIVE_DALI)**: I/O-bound on NFS, uses multiprocessing.Pool (1-3h with 8 CPUs on NFS; much faster with local scratch). Use `--scratch-dir /tmp` and `--dali-workers N` (N > cpus) to exploit I/O-bound parallelism.
 - **Step 13 (PARSE_DOMAINS)**: Memory-bound for large proteins, uses sparse matrices
 
 **Resource Recommendations** (500-residue protein):
 - Steps 1-6: 4 CPUs, 4GB memory, ~35-65 min total
-- Step 7: 8-16 CPUs, 8-16GB memory, ~1.4h (scales near-linearly up to 8-16 CPUs)
+- Step 7 (NFS): 8-16 CPUs, 8-16GB memory, ~1.4h (scales near-linearly up to 8-16 CPUs)
+- Step 7 (local scratch): 8 CPUs + 32-64 workers, 8-16GB memory, estimated 5-15x faster
 - Steps 8-13: 1-4 CPUs, 4GB memory, ~30min
 
 **Batch Mode Speedups** (step-first vs protein-first):
 - **Foldseek**: ~2.7x faster (DB index loaded once via `createdb`+`search`+`convertalis`)
-- **DALI**: Template caching eliminates redundant NFS copies across proteins
+- **DALI**: Template caching + local scratch I/O eliminates NFS latency (see `docs/DALI_LOCAL_SCRATCH_REFACTOR.md`)
 - **DOMASS**: ~628x per-protein speedup (TF model loaded once, ~22s saved per protein)
 - See `docs/BATCH_MODE_REFACTOR.md` for performance analysis
 
@@ -403,6 +422,7 @@ Structured logging via `utils/logging_config.py`:
 - **V2_VALIDATION_REPORT.md**: Comprehensive V1 vs V2 validation results
 - **ARCHITECTURE.md**: System architecture and data flow
 - **BATCH_MODE_REFACTOR.md**: Step-first batch processing design and performance analysis
+- **DALI_LOCAL_SCRATCH_REFACTOR.md**: DALI local scratch I/O optimization
 - **IMPLEMENTATION_GUIDE.md**: Developer guide for adding steps
 - **ML_PIPELINE_SETUP.md**: TensorFlow model configuration
 - **KNOWN_ISSUES.md**: Current known issues and workarounds
@@ -425,9 +445,13 @@ cutoff = max(5, len(resids) * 0.05)
 ```
 This affects how residues are grouped into segments and is critical for matching v1.0 output.
 
-**Multiprocessing pattern**: Uses `multiprocessing.Pool` with domain-level parallelism. Each ECOD domain is processed independently by a worker process, enabling near-linear speedup up to 8-16 CPUs.
+**Multiprocessing pattern**: Uses `multiprocessing.Pool` with domain-level parallelism. Each ECOD domain is processed independently by a worker process. Pool size defaults to `--cpus` but can be overridden with `--dali-workers` for I/O-bound oversubscription.
 
-**Temporary files**: Creates `iterativeDali_{prefix}/` directory with per-domain subdirectories. All temporary directories are cleaned up after completion, keeping only the final `{prefix}_iterativdDali_hits` file.
+**Local scratch I/O** (`--scratch-dir`): When set, DALI temp dirs go to `{scratch_dir}/dpam_dali_{prefix}/` instead of NFS. Hit files remain on NFS. Workers populate a local template cache (`{scratch_dir}/dpam_dali_{prefix}/template_cache/`) via atomic rename on first access. Per-protein scratch is cleaned up in a `finally` block. When `--scratch-dir` is None, behavior is identical to before (backward compatible).
+
+**DALI workers** (`--dali-workers`): DALI is I/O-bound, not CPU-bound. With local scratch, oversubscribing workers (e.g., 4x CPUs) saturates CPU while workers wait for I/O. For SLURM batch jobs, defaults to `min(cpus*4, 64)`.
+
+**Temporary files**: Creates `iterativeDali_{prefix}/` directory on NFS with per-domain hit files. Temp working dirs go to scratch (if set) or NFS. All temporary directories are cleaned up after completion, keeping only the final `{prefix}_iterativdDali_hits` file.
 
 **Output format**: Tab-delimited with specific format required for downstream steps. Header line format:
 ```

@@ -10,6 +10,7 @@ All phases are **complete and validated**. The step-first batch mode is fully op
 | Phase 2 | Foldseek batch search | Complete |
 | Phase 3 | DALI template caching | Complete |
 | Phase 4 | BatchRunner + CLI + SLURM wiring | Complete |
+| Phase 5 | DALI local scratch I/O | Complete |
 
 ### What Was Built
 
@@ -438,7 +439,21 @@ Template I/O optimization (shared cache instead of per-protein per-domain NFS re
 - Cross-mode compatibility: batch updates per-protein state, per-protein seeds batch state
 - E2E test: 3 proteins, all 3 optimized steps, all outputs match validation data exactly
 
-### Phase 5: Validate against HGD results
+### Phase 5: DALI local scratch I/O - COMPLETE
+
+Redirect DALI temp I/O from NFS to local scratch disk to eliminate NFS latency:
+
+- `run_dali()` accepts 6-tuple args with `scratch_base` parameter
+- When `scratch_base` is set, temp dirs go to local disk; hit files stay on NFS
+- Local template cache (`scratch_base/template_cache/`) populated via atomic rename on miss
+- `run_step7()` accepts `scratch_dir=` and `dali_workers=` parameters
+- `DPAMPipeline` and `BatchRunner` pass through `scratch_dir` and `dali_workers`
+- CLI: `--scratch-dir` and `--dali-workers` on `run`, `run-step`, `batch-run`, `slurm-batch`
+- SLURM scripts default to `--scratch-dir /tmp` and `--dali-workers min(cpus*4, 64)`
+- Backward compatible: `scratch_dir=None` means all I/O stays on NFS as before
+- See `docs/DALI_LOCAL_SCRATCH_REFACTOR.md` for full analysis
+
+### Phase 6: Validate against HGD results
 
 1. Run batch_39 through new batch mode
 2. Compare domain assignments against HGD DPAM results
@@ -469,7 +484,7 @@ Template I/O optimization (shared cache instead of per-protein per-domain NFS re
 ### Modified files:
 - `dpam/cli/main.py` - Added `batch-run`, `batch-status`, `slurm-batch` commands
 - `dpam/steps/step03_foldseek.py` - Added `run_step3_batch()` and `_split_foldseek_results()`
-- `dpam/steps/step07_iterative_dali.py` - Added `template_cache` parameter to `run_dali()` and `run_step7()`
+- `dpam/steps/step07_iterative_dali.py` - Added `template_cache`, `scratch_dir`, `dali_workers` parameters; 6-tuple args with local scratch I/O
 - `dpam/steps/step16_run_domass.py` - Added `DomassModel` context manager, `model=` param to `run_step16()`
 - `dpam/tools/foldseek.py` - Added `createdb()`, `search()`, `convertalis()` methods
 - `dpam/pipeline/slurm.py` - Added `generate_batch_slurm_script()`, `submit_batch_slurm()`

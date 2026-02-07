@@ -221,7 +221,7 @@ cli/main.py
     │       ├─▶ pipeline/runner.py  (for default per-protein fallback)
     │       │
     │       ├─▶ steps/step03_foldseek.py    (run_step3_batch)
-    │       ├─▶ steps/step07_iterative_dali.py (template_cache param)
+    │       ├─▶ steps/step07_iterative_dali.py (template_cache, scratch_dir, dali_workers)
     │       └─▶ steps/step16_run_domass.py  (DomassModel context mgr)
     │
     ├─▶ pipeline/batch.py           (protein-first local parallel)
@@ -260,11 +260,13 @@ BatchRunner (single process)
     │   ├─ convertalis: Extract results
     │   └─ Split: Per-protein .foldseek files
     │
-    ├─▶ Step 7 (DALI): Template cache
+    ├─▶ Step 7 (DALI): Template cache + local scratch I/O
     │   ├─ Scan _hits4Dali: Collect all unique templates
-    │   ├─ Bulk copy: ECOD70/ → shared cache dir (once)
-    │   ├─ Per-protein: run_step7() with template_cache path
-    │   └─ Cleanup: Remove cache dir
+    │   ├─ Bulk copy: ECOD70/ → shared NFS cache dir (once)
+    │   ├─ Per-protein: run_step7() with template_cache, scratch_dir, dali_workers
+    │   │   └─ Temp I/O on local scratch; hit files on NFS
+    │   │   └─ Local template cache populated via atomic rename on miss
+    │   └─ Cleanup: Remove NFS cache dir (scratch cleaned per-protein)
     │
     ├─▶ Step 16 (DOMASS): Shared TF model
     │   ├─ Load: TF model + session (once, ~22s)
@@ -343,7 +345,7 @@ Pipeline.run(prefix)
 | Step 2 | O(N²) | CPU | Parallelize |
 | Step 3 | O(N log N) | I/O | Database index |
 | Steps 4-6 | O(N) | - | - |
-| Step 7 | O(N³) | CPU + I/O | Multiprocessing |
+| Step 7 | O(N³) | I/O (NFS) | Local scratch + oversubscribed workers |
 | Steps 8-10 | O(N²) | - | - |
 | Step 11 | O(N) | - | - |
 | Step 12 | O(N²) | - | - |
