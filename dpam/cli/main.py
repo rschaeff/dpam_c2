@@ -64,6 +64,9 @@ Examples:
     run_parser.add_argument('--dali-workers', type=int, default=None,
                            help='DALI worker count (default: same as --cpus). '
                                 'DALI is I/O-bound; try 4x CPUs with local scratch.')
+    run_parser.add_argument('--flat', action='store_true',
+                           help='Use flat directory layout (all files in working dir). '
+                                'Default: sharded (per-step subdirectories).')
 
     # Run-step command
     step_parser = subparsers.add_parser('run-step', help='Run single pipeline step')
@@ -86,6 +89,9 @@ Examples:
     step_parser.add_argument('--dali-workers', type=int, default=None,
                             help='DALI worker count (default: same as --cpus). '
                                  'DALI is I/O-bound; try 4x CPUs with local scratch.')
+    step_parser.add_argument('--flat', action='store_true',
+                            help='Use flat directory layout (all files in working dir). '
+                                 'Default: sharded (per-step subdirectories).')
 
     # Batch command
     batch_parser = subparsers.add_parser('batch', help='Process multiple structures')
@@ -132,6 +138,9 @@ Examples:
     batch_run_parser.add_argument('--dali-workers', type=int, default=None,
                                   help='DALI worker count (default: same as --cpus). '
                                        'DALI is I/O-bound; try 4x CPUs with local scratch.')
+    batch_run_parser.add_argument('--flat', action='store_true',
+                                  help='Use flat directory layout (all files in working dir). '
+                                       'Default: sharded (per-step subdirectories).')
 
     # SLURM submit command (protein-first array jobs)
     slurm_parser = subparsers.add_parser('slurm-submit', help='Submit SLURM job array')
@@ -176,6 +185,9 @@ Examples:
                                      help='Local scratch dir for DALI temp I/O (default: /tmp for SLURM)')
     slurm_batch_parser.add_argument('--dali-workers', type=int, default=None,
                                      help='DALI worker count (default: min(cpus*4, 64) with scratch)')
+    slurm_batch_parser.add_argument('--flat', action='store_true',
+                                     help='Use flat directory layout (all files in working dir). '
+                                          'Default: sharded (per-step subdirectories).')
 
     # Batch status command
     status_parser = subparsers.add_parser(
@@ -226,6 +238,7 @@ def run_pipeline(args) -> int:
     skip_addss = getattr(args, 'skip_addss', False)
     scratch_dir = getattr(args, 'scratch_dir', None)
     dali_workers = getattr(args, 'dali_workers', None)
+    sharded = None if not getattr(args, 'flat', False) else False
     pipeline = DPAMPipeline(
         working_dir=args.working_dir,
         data_dir=args.data_dir,
@@ -233,7 +246,8 @@ def run_pipeline(args) -> int:
         resume=args.resume,
         skip_addss=skip_addss,
         scratch_dir=scratch_dir,
-        dali_workers=dali_workers
+        dali_workers=dali_workers,
+        sharded=sharded
     )
 
     # Run pipeline
@@ -260,6 +274,7 @@ def run_single_step(args) -> int:
     skip_addss = getattr(args, 'skip_addss', False)
     scratch_dir = getattr(args, 'scratch_dir', None)
     dali_workers = getattr(args, 'dali_workers', None)
+    sharded = None if not getattr(args, 'flat', False) else False
     pipeline = DPAMPipeline(
         working_dir=args.working_dir,
         data_dir=args.data_dir,
@@ -267,7 +282,8 @@ def run_single_step(args) -> int:
         resume=False,
         skip_addss=skip_addss,
         scratch_dir=scratch_dir,
-        dali_workers=dali_workers
+        dali_workers=dali_workers,
+        sharded=sharded
     )
 
     try:
@@ -334,6 +350,8 @@ def run_batch_stepwise(args) -> int:
     scratch_dir = getattr(args, 'scratch_dir', None)
     dali_workers = getattr(args, 'dali_workers', None)
 
+    sharded = None if not getattr(args, 'flat', False) else False
+
     try:
         runner = BatchRunner(
             proteins=proteins,
@@ -343,7 +361,8 @@ def run_batch_stepwise(args) -> int:
             resume=args.resume,
             skip_addss=skip_addss,
             scratch_dir=scratch_dir,
-            dali_workers=dali_workers
+            dali_workers=dali_workers,
+            sharded=sharded
         )
 
         runner.run(steps=steps)

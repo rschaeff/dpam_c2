@@ -58,6 +58,7 @@ def extract_domain_pdb(
 def run_step20(
     prefix: str,
     working_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -66,16 +67,20 @@ def run_step20(
     Args:
         prefix: Structure identifier
         working_dir: Working directory containing input/output
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 20: Extracting domain PDBs for {prefix}")
 
     # Input files
-    merge_file = working_dir / f"{prefix}.step19_merge_candidates"
-    input_pdb = working_dir / f"{prefix}.pdb"
+    merge_file = resolver.step_dir(19) / f"{prefix}.step19_merge_candidates"
+    input_pdb = resolver.step_dir(1) / f"{prefix}.pdb"
 
     # Check if merge candidates exist
     if not merge_file.exists():
@@ -87,7 +92,7 @@ def run_step20(
         return False
 
     # Output directory
-    output_dir = working_dir / "step20"
+    output_dir = resolver.step_dir(20)
     output_dir.mkdir(exist_ok=True)
 
     # Parse merge candidates

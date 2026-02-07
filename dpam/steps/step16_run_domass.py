@@ -268,6 +268,7 @@ def run_step16(
     working_dir: Path,
     data_dir: Path,
     model: Optional[DomassModel] = None,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -279,15 +280,19 @@ def run_step16(
         data_dir: Reference data directory
         model: Pre-loaded DomassModel instance for batch processing.
                If None, loads model from checkpoint (default single-protein behavior).
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 16: Running DOMASS model for {prefix}")
 
     # Input file
-    feature_file = working_dir / f"{prefix}.step15_features"
+    feature_file = resolver.step_dir(15) / f"{prefix}.step15_features"
 
     if not feature_file.exists():
         logger.info(f"No features found for {prefix}")
@@ -327,7 +332,7 @@ def run_step16(
     logger.info(f"Generated {len(predictions)} predictions")
 
     # Write results
-    output_file = working_dir / f"{prefix}.step16_predictions"
+    output_file = resolver.step_dir(16) / f"{prefix}.step16_predictions"
 
     with open(output_file, 'w') as f:
         # Write header

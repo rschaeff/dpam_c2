@@ -28,7 +28,8 @@ logger = get_logger('steps.step11')
 
 def run_step11(
     prefix: str,
-    working_dir: Path
+    working_dir: Path,
+    path_resolver=None
 ) -> bool:
     """
     Run step 11: Assign secondary structure elements.
@@ -36,15 +37,19 @@ def run_step11(
     Args:
         prefix: Structure prefix
         working_dir: Working directory
+        path_resolver: Optional PathResolver for sharded output directories
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 11: Assigning secondary structure for {prefix}")
 
     # Input files
-    pdb_file = working_dir / f'{prefix}.pdb'
-    fasta_file = working_dir / f'{prefix}.fa'
+    pdb_file = resolver.step_dir(1) / f'{prefix}.pdb'
+    fasta_file = resolver.step_dir(1) / f'{prefix}.fa'
 
     if not pdb_file.exists():
         logger.error(f"PDB file not found: {pdb_file}")
@@ -78,7 +83,7 @@ def run_step11(
         return False
 
     # Write SSE file
-    output_file = working_dir / f'{prefix}.sse'
+    output_file = resolver.step_dir(11) / f'{prefix}.sse'
     logger.info(f"Writing SSE assignments to {output_file}")
 
     with open(output_file, 'w') as f:

@@ -115,8 +115,21 @@ def load_pae_matrix(json_file: Path) -> Dict[int, Dict[int, float]]:
     rpair2error = {}
 
     if 'predicted_aligned_error' in json_dict:
-        # Format 1: 2D array
+        # Format 1: AlphaFold 2 - 2D array with 'predicted_aligned_error' key
         paes = json_dict['predicted_aligned_error']
+        length = len(paes)
+
+        for i in range(length):
+            res1 = i + 1
+            rpair2error[res1] = {}
+
+            for j in range(length):
+                res2 = j + 1
+                rpair2error[res1][res2] = paes[i][j]
+
+    elif 'pae' in json_dict:
+        # Format 2: AlphaFold 3 - 2D array with 'pae' key
+        paes = json_dict['pae']
         length = len(paes)
 
         for i in range(length):
@@ -264,7 +277,8 @@ def find_disordered_regions(
 
 def run_step12(
     prefix: str,
-    working_dir: Path
+    working_dir: Path,
+    path_resolver=None
 ) -> bool:
     """
     Run step 12: Predict disordered regions.
@@ -272,16 +286,20 @@ def run_step12(
     Args:
         prefix: Structure prefix
         working_dir: Working directory
+        path_resolver: Optional PathResolver for sharded output directories
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 12: Predicting disorder for {prefix}")
 
     # Input files
-    sse_file = working_dir / f'{prefix}.sse'
-    json_file = working_dir / f'{prefix}.json'
-    gooddomains_file = working_dir / f'{prefix}.goodDomains'
+    sse_file = resolver.step_dir(11) / f'{prefix}.sse'
+    json_file = resolver.root / f'{prefix}.json'
+    gooddomains_file = resolver.step_dir(10) / f'{prefix}.goodDomains'
 
     if not sse_file.exists():
         logger.error(f"SSE file not found: {sse_file}")
@@ -325,7 +343,7 @@ def run_step12(
     logger.info(f"Identified {len(diso_resids)} disordered residues")
 
     # Write output
-    output_file = working_dir / f'{prefix}.diso'
+    output_file = resolver.step_dir(12) / f'{prefix}.diso'
     logger.info(f"Writing disorder predictions to {output_file}")
 
     with open(output_file, 'w') as f:

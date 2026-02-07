@@ -89,6 +89,7 @@ def transitive_closure(pairs: List[Set[str]]) -> List[Set[str]]:
 def run_step22(
     prefix: str,
     working_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -97,22 +98,26 @@ def run_step22(
     Args:
         prefix: Structure identifier
         working_dir: Working directory containing input/output
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 22: Merging domains for {prefix}")
 
     # Input file
-    comparison_file = working_dir / f"{prefix}.step21_comparisons"
+    comparison_file = resolver.step_dir(21) / f"{prefix}.step21_comparisons"
 
     if not comparison_file.exists():
         logger.info(f"No comparison results found for {prefix}")
         return True
 
     # Output file
-    output_file = working_dir / f"{prefix}.step22_merged_domains"
+    output_file = resolver.step_dir(22) / f"{prefix}.step22_merged_domains"
 
     # Load validated merge pairs (judgment > 0)
     domain_to_resids = {}  # Track residue sets for each domain

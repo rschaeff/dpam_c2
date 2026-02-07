@@ -19,7 +19,8 @@ def run_step2(
     cpus: int = 1,
     uniref_db: Path = None,
     pdb70_db: Path = None,
-    skip_addss: bool = False
+    skip_addss: bool = False,
+    path_resolver=None
 ) -> bool:
     """
     Run Step 2: HHsearch pipeline.
@@ -33,10 +34,14 @@ def run_step2(
         pdb70_db: Direct path to PDB70 database (optional)
         skip_addss: Skip addss.pl secondary structure prediction (default False).
                     Set True when PSIPRED is not available.
+        path_resolver: Optional PathResolver for sharded output directories
 
     Returns:
         True if successful
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"=== Step 2: HHsearch for {prefix} ===")
 
     try:
@@ -45,8 +50,11 @@ def run_step2(
         if data_dir:
             data_dir = data_dir.resolve()
 
-        fasta_file = working_dir / f'{prefix}.fa'
-        output_prefix = working_dir / prefix
+        # Input from step 1
+        fasta_file = resolver.step_dir(1) / f'{prefix}.fa'
+        # Output to step 2 directory
+        step2_dir = resolver.step_dir(2)
+        output_prefix = step2_dir / prefix
 
         if not fasta_file.exists():
             logger.error(f"FASTA file not found: {fasta_file}")
@@ -63,14 +71,14 @@ def run_step2(
             pdb70_db=pdb70_db,
             skip_addss=skip_addss
         )
-        
+
         if hhsearch_file.exists():
             logger.info(f"Step 2 completed successfully for {prefix}")
             return True
         else:
             logger.error(f"HHsearch output not found: {hhsearch_file}")
             return False
-    
+
     except Exception as e:
         logger.error(f"Step 2 failed for {prefix}: {e}")
         return False

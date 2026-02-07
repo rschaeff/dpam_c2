@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 def run_step17(
     prefix: str,
     working_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -49,15 +50,19 @@ def run_step17(
     Args:
         prefix: Structure identifier
         working_dir: Working directory containing input/output
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 17: Filtering confident predictions for {prefix}")
 
     # Input file
-    predictions_file = working_dir / f"{prefix}.step16_predictions"
+    predictions_file = resolver.step_dir(16) / f"{prefix}.step16_predictions"
 
     if not predictions_file.exists():
         logger.info(f"No predictions found for {prefix}")
@@ -166,7 +171,7 @@ def run_step17(
             results.append(f"{domain}\t{domain_range}\t{tgroup}\t{ecod_ref}\t{prob:.4f}\t{quality}")
 
     # Write confident predictions
-    output_file = working_dir / f"{prefix}.step17_confident_predictions"
+    output_file = resolver.step_dir(17) / f"{prefix}.step17_confident_predictions"
 
     if results:
         with open(output_file, 'w') as f:

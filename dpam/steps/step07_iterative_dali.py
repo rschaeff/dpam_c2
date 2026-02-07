@@ -83,22 +83,28 @@ def run_dali(args: Tuple) -> bool:
         args: Tuple of (prefix, edomain, working_dir, data_dir)
               or (prefix, edomain, working_dir, data_dir, template_cache)
               or (prefix, edomain, working_dir, data_dir, template_cache, scratch_base)
+              or (prefix, edomain, working_dir, data_dir, template_cache, scratch_base, query_pdb_dir)
 
     Returns:
         True if any hits found
     """
-    if len(args) == 6:
+    if len(args) == 7:
+        prefix, edomain, working_dir, data_dir, template_cache, scratch_base, query_pdb_dir = args
+    elif len(args) == 6:
         prefix, edomain, working_dir, data_dir, template_cache, scratch_base = args
+        query_pdb_dir = working_dir  # backward compat
     elif len(args) == 5:
         prefix, edomain, working_dir, data_dir, template_cache = args
         scratch_base = None
+        query_pdb_dir = working_dir  # backward compat
     else:
         prefix, edomain, working_dir, data_dir = args
         template_cache = None
         scratch_base = None
+        query_pdb_dir = working_dir  # backward compat
 
     # Setup paths - use absolute paths to avoid directory confusion
-    query_pdb = (working_dir / f'{prefix}.pdb').resolve()
+    query_pdb = (Path(query_pdb_dir) / f'{prefix}.pdb').resolve()
 
     # Resolve template source: local scratch cache > NFS template cache > ECOD70/
     local_template = None
@@ -274,7 +280,8 @@ def run_step7(
     cpus: int = 1,
     template_cache: Path = None,
     scratch_dir: Path = None,
-    dali_workers: int = None
+    dali_workers: int = None,
+    path_resolver=None
 ) -> bool:
     """
     Run Step 7: Iterative DALI alignment.
@@ -296,15 +303,24 @@ def run_step7(
             latency for DALI's 20-50 file ops per alignment.
         dali_workers: Number of DALI worker processes. Defaults to cpus.
             DALI is I/O-bound; try 4x CPUs when using local scratch.
+        path_resolver: Optional PathResolver for sharded output directories
 
     Returns:
         True if successful
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"=== Step 7: Iterative DALI for {prefix} ===")
 
     # Convert paths to absolute to avoid relative path issues after chdir
     working_dir = Path(working_dir).resolve()
     data_dir = Path(data_dir).resolve()
+
+    # Resolve step directories
+    step1_dir = Path(resolver.step_dir(1)).resolve()
+    step6_dir = Path(resolver.step_dir(6)).resolve()
+    step7_dir = Path(resolver.step_dir(7)).resolve()
 
     # Determine worker count
     pool_size = dali_workers if dali_workers else cpus
@@ -325,18 +341,18 @@ def run_step7(
 
     try:
         # Check if already done - use absolute path
-        done_file = working_dir / f'{prefix}.iterativeDali.done'
+        done_file = step7_dir / f'{prefix}.iterativeDali.done'
         if done_file.exists():
             logger.info(f"Step 7 already completed for {prefix}")
             return True
 
         # Create output directory - use absolute path
-        iterative_dir = working_dir / f'iterativeDali_{prefix}'
+        iterative_dir = step7_dir / f'iterativeDali_{prefix}'
         if not iterative_dir.exists():
             iterative_dir.mkdir(parents=True)
 
         # Read ECOD domain candidates from step 6 - use absolute path
-        hits_file = working_dir / f'{prefix}_hits4Dali'
+        hits_file = step6_dir / f'{prefix}_hits4Dali'
 
         # Debug logging to help diagnose path issues
         logger.debug(f"Looking for hits file: {hits_file}")
@@ -357,14 +373,16 @@ def run_step7(
         )
 
         # Prepare arguments for parallel processing
+        # 7-tuple: (prefix, edomain, step7_dir, data_dir, template_cache, scratch_base, step1_dir)
+        # Workers use step7_dir for iterative output, step1_dir for query PDB lookup
         if scratch_base:
             inputs = [
-                (prefix, edomain, working_dir, data_dir, template_cache, scratch_base)
+                (prefix, edomain, step7_dir, data_dir, template_cache, scratch_base, step1_dir)
                 for edomain in edomains
             ]
         else:
             inputs = [
-                (prefix, edomain, working_dir, data_dir, template_cache)
+                (prefix, edomain, step7_dir, data_dir, template_cache, None, step1_dir)
                 for edomain in edomains
             ]
 
@@ -376,7 +394,7 @@ def run_step7(
         logger.info(f"Completed DALI for {n_success}/{len(edomains)} domains")
 
         # Concatenate all hits files
-        final_file = working_dir / f'{prefix}_iterativdDali_hits'
+        final_file = step7_dir / f'{prefix}_iterativdDali_hits'
         with open(final_file, 'w') as outf:
             for hit_file in sorted(iterative_dir.glob(f'{prefix}_*_hits')):
                 with open(hit_file, 'r') as inf:

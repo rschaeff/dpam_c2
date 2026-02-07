@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from dpam.core.models import PipelineStep, PipelineState
+from dpam.core.path_resolver import PathResolver
 from dpam.pipeline.runner import DPAMPipeline, CRITICAL_STEPS
 from dpam.utils.logging_config import get_logger
 
@@ -174,7 +175,8 @@ class BatchRunner:
         resume: bool = True,
         skip_addss: bool = False,
         scratch_dir: Path = None,
-        dali_workers: int = None
+        dali_workers: int = None,
+        sharded: bool = None
     ):
         self.proteins = proteins
         self.working_dir = Path(working_dir)
@@ -194,8 +196,12 @@ class BatchRunner:
             resume=False,  # We manage resume via BatchState
             skip_addss=self.skip_addss,
             scratch_dir=self.scratch_dir,
-            dali_workers=self.dali_workers
+            dali_workers=self.dali_workers,
+            sharded=sharded
         )
+
+        # Use the pipeline's resolver for consistent path resolution
+        self.resolver = self.pipeline.resolver
 
         # Batch state for resume support
         self.state = BatchState(
@@ -266,7 +272,8 @@ class BatchRunner:
         try:
             results = run_step3_batch(
                 proteins, self.working_dir, self.data_dir,
-                threads=self.cpus
+                threads=self.cpus,
+                path_resolver=self.resolver
             )
 
             for protein, success in results.items():
@@ -296,8 +303,9 @@ class BatchRunner:
 
         # Scan _hits4Dali files to collect all needed template domain IDs
         all_templates = set()
+        candidates_dir = self.resolver.step_dir(6)
         for protein in proteins:
-            hits_file = self.working_dir / f'{protein}_hits4Dali'
+            hits_file = candidates_dir / f'{protein}_hits4Dali'
             if hits_file.exists():
                 with open(hits_file) as f:
                     for line in f:
@@ -308,7 +316,7 @@ class BatchRunner:
         if not all_templates:
             logger.info("No DALI candidates found for any protein, skipping")
             for p in proteins:
-                hits_file = self.working_dir / f'{p}_hits4Dali'
+                hits_file = candidates_dir / f'{p}_hits4Dali'
                 if not hits_file.exists():
                     self.state.mark_failed(
                         PipelineStep.ITERATIVE_DALI, p,
@@ -316,8 +324,8 @@ class BatchRunner:
                     )
             return
 
-        # Create shared template cache
-        template_cache = self.working_dir / '_dali_template_cache'
+        # Create shared template cache in batch directory
+        template_cache = self.resolver.batch_dir() / '_dali_template_cache'
         template_cache.mkdir(exist_ok=True)
 
         ecod70_dir = self.data_dir / 'ECOD70'
@@ -352,7 +360,8 @@ class BatchRunner:
                     protein, self.working_dir, self.data_dir,
                     cpus=self.cpus, template_cache=template_cache,
                     scratch_dir=self.scratch_dir,
-                    dali_workers=self.dali_workers
+                    dali_workers=self.dali_workers,
+                    path_resolver=self.resolver
                 )
                 if success:
                     self.state.mark_complete(
@@ -404,7 +413,8 @@ class BatchRunner:
                     try:
                         success = run_step16(
                             protein, self.working_dir, self.data_dir,
-                            model=model
+                            model=model,
+                            path_resolver=self.resolver
                         )
                         if success:
                             self.state.mark_complete(

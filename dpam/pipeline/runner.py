@@ -9,6 +9,7 @@ from typing import List, Optional
 import time
 
 from dpam.core.models import PipelineStep, PipelineState
+from dpam.core.path_resolver import PathResolver
 from dpam.utils.logging_config import (
     get_logger,
     log_step_start,
@@ -40,7 +41,8 @@ class DPAMPipeline:
         resume: bool = True,
         skip_addss: bool = False,
         scratch_dir: Path = None,
-        dali_workers: int = None
+        dali_workers: int = None,
+        sharded: bool = None
     ):
         """
         Initialize pipeline.
@@ -53,6 +55,7 @@ class DPAMPipeline:
             skip_addss: Skip addss.pl secondary structure (PSIPRED not available)
             scratch_dir: Local scratch dir for DALI temp I/O (default: NFS working dir)
             dali_workers: DALI worker count (default: same as cpus)
+            sharded: Use sharded directory layout (None = auto-detect)
         """
         self.working_dir = Path(working_dir)
         self.data_dir = Path(data_dir)
@@ -61,9 +64,19 @@ class DPAMPipeline:
         self.skip_addss = skip_addss
         self.scratch_dir = scratch_dir
         self.dali_workers = dali_workers
-        
+
         self.working_dir.mkdir(parents=True, exist_ok=True)
-        
+
+        # Determine directory layout
+        if sharded is None:
+            if resume and PathResolver.detect_layout(self.working_dir):
+                sharded = True
+            elif resume and not PathResolver.detect_layout(self.working_dir):
+                sharded = False
+            else:
+                sharded = True
+        self.resolver = PathResolver(self.working_dir, sharded=sharded)
+
         # Load reference data once
         from dpam.io.reference_data import load_ecod_data
         logger.info("Loading ECOD reference data...")
@@ -186,101 +199,115 @@ class DPAMPipeline:
         Returns:
             True if successful
         """
+        r = self.resolver
+
         # Import step modules dynamically
         if step == PipelineStep.PREPARE:
             from dpam.steps.step01_prepare import run_step1
-            return run_step1(prefix, self.working_dir)
-        
+            return run_step1(prefix, self.working_dir, path_resolver=r)
+
         elif step == PipelineStep.HHSEARCH:
             from dpam.steps.step02_hhsearch import run_step2
             return run_step2(prefix, self.working_dir, self.data_dir, self.cpus,
-                             skip_addss=self.skip_addss)
-        
+                             skip_addss=self.skip_addss, path_resolver=r)
+
         elif step == PipelineStep.FOLDSEEK:
             from dpam.steps.step03_foldseek import run_step3
-            return run_step3(prefix, self.working_dir, self.data_dir, self.cpus)
-        
+            return run_step3(prefix, self.working_dir, self.data_dir, self.cpus,
+                             path_resolver=r)
+
         elif step == PipelineStep.FILTER_FOLDSEEK:
             from dpam.steps.step04_filter_foldseek import run_step4
-            return run_step4(prefix, self.working_dir)
-        
+            return run_step4(prefix, self.working_dir, path_resolver=r)
+
         elif step == PipelineStep.MAP_ECOD:
             from dpam.steps.step05_map_ecod import run_step5
-            return run_step5(prefix, self.working_dir, self.reference_data)
-        
+            return run_step5(prefix, self.working_dir, self.reference_data,
+                             path_resolver=r)
+
         elif step == PipelineStep.DALI_CANDIDATES:
             from dpam.steps.step06_get_dali_candidates import run_step6
-            return run_step6(prefix, self.working_dir)
-        
+            return run_step6(prefix, self.working_dir, path_resolver=r)
+
         elif step == PipelineStep.ITERATIVE_DALI:
             from dpam.steps.step07_iterative_dali import run_step7
             return run_step7(prefix, self.working_dir, self.data_dir, self.cpus,
                              scratch_dir=self.scratch_dir,
-                             dali_workers=self.dali_workers)
-        
+                             dali_workers=self.dali_workers,
+                             path_resolver=r)
+
         elif step == PipelineStep.ANALYZE_DALI:
             from dpam.steps.step08_analyze_dali import run_step8
-            return run_step8(prefix, self.working_dir, self.reference_data, self.data_dir)
-        
+            return run_step8(prefix, self.working_dir, self.reference_data,
+                             self.data_dir, path_resolver=r)
+
         elif step == PipelineStep.GET_SUPPORT:
             from dpam.steps.step09_get_support import run_step9
-            return run_step9(prefix, self.working_dir, self.reference_data)
-        
+            return run_step9(prefix, self.working_dir, self.reference_data,
+                             path_resolver=r)
+
         elif step == PipelineStep.FILTER_DOMAINS:
             from dpam.steps.step10_filter_domains import run_step10
-            return run_step10(prefix, self.working_dir, self.reference_data)
-        
+            return run_step10(prefix, self.working_dir, self.reference_data,
+                              path_resolver=r)
+
         elif step == PipelineStep.SSE:
             from dpam.steps.step11_sse import run_step11
-            return run_step11(prefix, self.working_dir)
-        
+            return run_step11(prefix, self.working_dir, path_resolver=r)
+
         elif step == PipelineStep.DISORDER:
             from dpam.steps.step12_disorder import run_step12
-            return run_step12(prefix, self.working_dir)
-        
+            return run_step12(prefix, self.working_dir, path_resolver=r)
+
         elif step == PipelineStep.PARSE_DOMAINS:
             from dpam.steps.step13_parse_domains import run_step13
-            return run_step13(prefix, self.working_dir)
+            return run_step13(prefix, self.working_dir, path_resolver=r)
 
         elif step == PipelineStep.PREPARE_DOMASS:
             from dpam.steps.step15_prepare_domass import run_step15
-            return run_step15(prefix, self.working_dir, self.data_dir)
+            return run_step15(prefix, self.working_dir, self.data_dir,
+                              path_resolver=r)
 
         elif step == PipelineStep.RUN_DOMASS:
             from dpam.steps.step16_run_domass import run_step16
-            return run_step16(prefix, self.working_dir, self.data_dir)
+            return run_step16(prefix, self.working_dir, self.data_dir,
+                              path_resolver=r)
 
         elif step == PipelineStep.GET_CONFIDENT:
             from dpam.steps.step17_get_confident import run_step17
-            return run_step17(prefix, self.working_dir)
+            return run_step17(prefix, self.working_dir, path_resolver=r)
 
         elif step == PipelineStep.GET_MAPPING:
             from dpam.steps.step18_get_mapping import run_step18
-            return run_step18(prefix, self.working_dir, self.data_dir)
+            return run_step18(prefix, self.working_dir, self.data_dir,
+                              path_resolver=r)
 
         elif step == PipelineStep.GET_MERGE_CANDIDATES:
             from dpam.steps.step19_get_merge_candidates import run_step19
-            return run_step19(prefix, self.working_dir, self.data_dir)
+            return run_step19(prefix, self.working_dir, self.data_dir,
+                              path_resolver=r)
 
         elif step == PipelineStep.EXTRACT_DOMAINS:
             from dpam.steps.step20_extract_domains import run_step20
-            return run_step20(prefix, self.working_dir)
+            return run_step20(prefix, self.working_dir, path_resolver=r)
 
         elif step == PipelineStep.COMPARE_DOMAINS:
             from dpam.steps.step21_compare_domains import run_step21
-            return run_step21(prefix, self.working_dir)
+            return run_step21(prefix, self.working_dir, path_resolver=r)
 
         elif step == PipelineStep.MERGE_DOMAINS:
             from dpam.steps.step22_merge_domains import run_step22
-            return run_step22(prefix, self.working_dir)
+            return run_step22(prefix, self.working_dir, path_resolver=r)
 
         elif step == PipelineStep.GET_PREDICTIONS:
             from dpam.steps.step23_get_predictions import run_step23
-            return run_step23(prefix, self.working_dir, self.data_dir)
+            return run_step23(prefix, self.working_dir, self.data_dir,
+                              path_resolver=r)
 
         elif step == PipelineStep.INTEGRATE_RESULTS:
             from dpam.steps.step24_integrate_results import run_step24
-            return run_step24(prefix, self.working_dir, self.data_dir)
+            return run_step24(prefix, self.working_dir, self.data_dir,
+                              path_resolver=r)
 
         elif step == PipelineStep.GENERATE_PDBS:
             # Step 25 is optional visualization - skip for now

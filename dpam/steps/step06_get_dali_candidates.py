@@ -78,28 +78,36 @@ def read_domains_from_foldseek(file_path: Path) -> Set[str]:
 
 def run_step6(
     prefix: str,
-    working_dir: Path
+    working_dir: Path,
+    path_resolver=None
 ) -> bool:
     """
     Run Step 6: Merge DALI candidates.
-    
+
     Combines unique ECOD domains from:
-    - Step 5: HHsearch → ECOD mapping
+    - Step 5: HHsearch -> ECOD mapping
     - Step 4: Foldseek filtered results
-    
+
     Args:
         prefix: Structure prefix
         working_dir: Working directory
-    
+        path_resolver: Optional PathResolver for sharded output directories
+
     Returns:
         True if successful
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"=== Step 6: Get DALI Candidates for {prefix} ===")
-    
+
     try:
-        map_ecod_file = working_dir / f'{prefix}.map2ecod.result'
-        foldseek_file = working_dir / f'{prefix}.foldseek.flt.result'
-        output_file = working_dir / f'{prefix}_hits4Dali'
+        # Input from step 5
+        map_ecod_file = resolver.step_dir(5) / f'{prefix}.map2ecod.result'
+        # Input from step 4
+        foldseek_file = resolver.step_dir(4) / f'{prefix}.foldseek.flt.result'
+        # Output to step 6 directory
+        output_file = resolver.step_dir(6) / f'{prefix}_hits4Dali'
         
         # Read domains from both sources
         domains_from_hhsearch = read_domains_from_map_ecod(map_ecod_file)

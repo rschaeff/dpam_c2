@@ -74,6 +74,7 @@ def run_step23(
     prefix: str,
     working_dir: Path,
     data_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -83,18 +84,22 @@ def run_step23(
         prefix: Structure identifier
         working_dir: Working directory containing input/output
         data_dir: Reference data directory
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 23: Getting predictions for {prefix}")
 
     # Input files
-    merged_file = working_dir / f"{prefix}.step22_merged_domains"
-    domains_file = working_dir / f"{prefix}.step13_domains"
-    predictions_file = working_dir / f"{prefix}.step16_predictions"
-    mappings_file = working_dir / f"{prefix}.step18_mappings"
+    merged_file = resolver.step_dir(22) / f"{prefix}.step22_merged_domains"
+    domains_file = resolver.step_dir(13) / f"{prefix}.step13_domains"
+    predictions_file = resolver.step_dir(16) / f"{prefix}.step16_predictions"
+    mappings_file = resolver.step_dir(18) / f"{prefix}.step18_mappings"
 
     # Check inputs
     for required_file in [domains_file, predictions_file, mappings_file]:
@@ -469,7 +474,7 @@ def run_step23(
             )
 
     # Write results
-    output_file = working_dir / f"{prefix}.step23_predictions"
+    output_file = resolver.step_dir(23) / f"{prefix}.step23_predictions"
 
     with open(output_file, 'w') as f:
         f.write("# classification\tdomain\trange\tecod\ttgroup\t"

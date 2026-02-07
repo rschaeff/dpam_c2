@@ -134,6 +134,7 @@ def run_step15(
     prefix: str,
     working_dir: Path,
     data_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -143,18 +144,22 @@ def run_step15(
         prefix: Structure identifier
         working_dir: Working directory containing input/output
         data_dir: Reference data directory
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 15: Preparing DOMASS features for {prefix}")
 
     # Input files
-    domains_file = working_dir / f"{prefix}.step13_domains"
-    sse_file = working_dir / f"{prefix}.sse"
-    gooddomains_file = working_dir / f"{prefix}.goodDomains"  # Contains both HHsearch and DALI
-    good_hits_file = working_dir / f"{prefix}_good_hits"  # DALI hits with scores
+    domains_file = resolver.step_dir(13) / f"{prefix}.step13_domains"
+    sse_file = resolver.step_dir(11) / f"{prefix}.sse"
+    gooddomains_file = resolver.step_dir(10) / f"{prefix}.goodDomains"  # Contains both HHsearch and DALI
+    good_hits_file = resolver.step_dir(8) / f"{prefix}_good_hits"  # DALI hits with scores
 
     # Check inputs
     if not domains_file.exists():
@@ -381,7 +386,7 @@ def run_step15(
     logger.debug(f"Loaded {len(dali_hits)} DALI hits")
 
     # Generate features for each domain
-    output_file = working_dir / f"{prefix}.step15_features"
+    output_file = resolver.step_dir(15) / f"{prefix}.step15_features"
     feature_count = 0
 
     with open(output_file, 'w') as f:

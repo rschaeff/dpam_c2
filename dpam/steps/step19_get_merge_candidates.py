@@ -83,6 +83,7 @@ def run_step19(
     prefix: str,
     working_dir: Path,
     data_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -92,15 +93,19 @@ def run_step19(
         prefix: Structure identifier
         working_dir: Working directory containing input/output
         data_dir: Reference data directory
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 19: Getting merge candidates for {prefix}")
 
     # Input file
-    mappings_file = working_dir / f"{prefix}.step18_mappings"
+    mappings_file = resolver.step_dir(18) / f"{prefix}.step18_mappings"
 
     if not mappings_file.exists():
         logger.info(f"No mappings found for {prefix}")
@@ -300,8 +305,8 @@ def run_step19(
             merge_info.append(f"{domain1},{domain2}\t{','.join(supporting_ecods)}")
 
     # Write results
-    output_file = working_dir / f"{prefix}.step19_merge_candidates"
-    info_file = working_dir / f"{prefix}.step19_merge_info"
+    output_file = resolver.step_dir(19) / f"{prefix}.step19_merge_candidates"
+    info_file = resolver.step_dir(19) / f"{prefix}.step19_merge_info"
 
     if validated_merges:
         with open(output_file, 'w') as f:

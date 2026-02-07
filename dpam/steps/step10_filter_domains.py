@@ -308,7 +308,8 @@ def process_structure_hits(
 def run_step10(
     prefix: str,
     working_dir: Path,
-    reference_data: ReferenceData
+    reference_data: ReferenceData,
+    path_resolver=None
 ) -> bool:
     """
     Run step 10: Filter good domains.
@@ -317,15 +318,19 @@ def run_step10(
         prefix: Structure prefix
         working_dir: Working directory
         reference_data: ECOD reference data
+        path_resolver: Optional PathResolver for sharded output directories
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 10: Filtering good domains for {prefix}")
 
     # Input files
-    sequence_file = working_dir / f'{prefix}_sequence.result'
-    structure_file = working_dir / f'{prefix}_structure.result'
+    sequence_file = resolver.step_dir(9) / f'{prefix}_sequence.result'
+    structure_file = resolver.step_dir(9) / f'{prefix}_structure.result'
 
     # Process sequence hits
     logger.info("Processing sequence hits")
@@ -342,7 +347,7 @@ def run_step10(
 
     # Write output (only if we have results)
     if all_results:
-        output_file = working_dir / f'{prefix}.goodDomains'
+        output_file = resolver.step_dir(10) / f'{prefix}.goodDomains'
         logger.info(f"Writing {len(all_results)} good domains to {output_file}")
 
         with open(output_file, 'w') as f:

@@ -145,24 +145,31 @@ def map_pdb_to_ecod(
 def run_step5(
     prefix: str,
     working_dir: Path,
-    reference_data: ReferenceData
+    reference_data: ReferenceData,
+    path_resolver=None
 ) -> bool:
     """
     Run Step 5: Map HHsearch hits to ECOD domains.
-    
+
     Args:
         prefix: Structure prefix
         working_dir: Working directory
         reference_data: ECOD reference data
-    
+        path_resolver: Optional PathResolver for sharded output directories
+
     Returns:
         True if successful
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"=== Step 5: Map to ECOD for {prefix} ===")
-    
+
     try:
-        hhsearch_file = working_dir / f'{prefix}.hhsearch'
-        output_file = working_dir / f'{prefix}.map2ecod.result'
+        # Input from step 2
+        hhsearch_file = resolver.step_dir(2) / f'{prefix}.hhsearch'
+        # Output to step 5 directory
+        output_file = resolver.step_dir(5) / f'{prefix}.map2ecod.result'
         
         # Check input
         if not hhsearch_file.exists():

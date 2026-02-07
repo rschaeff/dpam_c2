@@ -28,7 +28,8 @@ class StructurePreparationError(Exception):
 
 def extract_sequence(
     prefix: str,
-    working_dir: Path
+    working_dir: Path,
+    path_resolver=None
 ) -> bool:
     """
     Extract sequence from structure file.
@@ -45,12 +46,17 @@ def extract_sequence(
     Raises:
         StructurePreparationError: If extraction fails
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Extracting sequence for {prefix}")
-    
-    cif_file = working_dir / f'{prefix}.cif'
-    pdb_file = working_dir / f'{prefix}.pdb'
-    fasta_file = working_dir / f'{prefix}.fa'
-    
+
+    # User inputs stay in root directory
+    cif_file = resolver.root / f'{prefix}.cif'
+    pdb_file = resolver.root / f'{prefix}.pdb'
+    # FASTA output goes to step 1 directory
+    fasta_file = resolver.step_dir(1) / f'{prefix}.fa'
+
     # Check if FASTA already exists
     if fasta_file.exists():
         logger.debug(f"FASTA already exists: {fasta_file}")
@@ -134,7 +140,8 @@ def extract_sequence(
 
 def standardize_structure(
     prefix: str,
-    working_dir: Path
+    working_dir: Path,
+    path_resolver=None
 ) -> bool:
     """
     Create standardized PDB file with validation.
@@ -151,23 +158,31 @@ def standardize_structure(
     Raises:
         StructurePreparationError: If standardization fails
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Standardizing structure for {prefix}")
-    
-    cif_file = working_dir / f'{prefix}.cif'
-    pdb_file = working_dir / f'{prefix}.pdb'
-    fasta_file = working_dir / f'{prefix}.fa'
-    
+
+    # User inputs stay in root directory
+    cif_file = resolver.root / f'{prefix}.cif'
+    # User-provided PDB is in root
+    input_pdb_file = resolver.root / f'{prefix}.pdb'
+    # Standardized PDB output goes to step 1 directory
+    output_pdb_file = resolver.step_dir(1) / f'{prefix}.pdb'
+    # FASTA from step 1
+    fasta_file = resolver.step_dir(1) / f'{prefix}.fa'
+
     # Read FASTA sequence (ground truth)
     if not fasta_file.exists():
         raise StructurePreparationError("FASTA file not found")
-    
+
     header, reference_seq = read_fasta(fasta_file)
-    
+
     # Branch 1: CIF + FASTA
     if cif_file.exists() and fasta_file.exists():
         try:
             structure = read_structure_from_cif(cif_file, chain_id='A')
-            
+
             # Validate sequence match
             if structure.sequence != reference_seq:
                 # Check with gaps
@@ -179,23 +194,25 @@ def standardize_structure(
                         structure_seq_with_gaps += structure.sequence[idx]
                     else:
                         structure_seq_with_gaps += "-"
-                
+
                 if structure_seq_with_gaps != reference_seq:
                     error_msg = f"Sequence mismatch for {prefix}"
                     logger.error(error_msg)
                     raise StructurePreparationError(error_msg)
-            
+
             # Write standardized PDB
-            write_pdb(pdb_file, structure, truncate_coords=True)
+            write_pdb(output_pdb_file, structure, truncate_coords=True)
             logger.info(f"Standardized CIF to PDB: {len(structure.residue_ids)} residues")
             return True
-        
+
         except Exception as e:
             logger.error(f"CIF standardization failed: {e}")
             raise StructurePreparationError(f"CIF processing failed: {e}")
-    
+
     # Branch 2: PDB + FASTA (validation only)
-    elif pdb_file.exists() and fasta_file.exists():
+    # Check both step dir and root for user-provided PDB
+    elif (output_pdb_file.exists() or input_pdb_file.exists()) and fasta_file.exists():
+        pdb_file = output_pdb_file if output_pdb_file.exists() else input_pdb_file
         try:
             structure = read_structure_from_pdb(pdb_file, chain_id='A')
             
@@ -221,26 +238,31 @@ def standardize_structure(
 
 def run_step1(
     prefix: str,
-    working_dir: Path
+    working_dir: Path,
+    path_resolver=None
 ) -> bool:
     """
     Run complete Step 1: preparation and validation.
-    
+
     Args:
         prefix: Structure prefix
         working_dir: Working directory
-    
+        path_resolver: Optional PathResolver for sharded output directories
+
     Returns:
         True if successful
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"=== Step 1: Structure Preparation for {prefix} ===")
-    
+
     try:
         # Extract sequence
-        extract_sequence(prefix, working_dir)
-        
+        extract_sequence(prefix, working_dir, path_resolver=resolver)
+
         # Standardize structure
-        standardize_structure(prefix, working_dir)
+        standardize_structure(prefix, working_dir, path_resolver=resolver)
         
         logger.info(f"Step 1 completed successfully for {prefix}")
         return True

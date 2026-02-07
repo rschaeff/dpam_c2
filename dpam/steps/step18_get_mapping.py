@@ -111,6 +111,7 @@ def run_step18(
     prefix: str,
     working_dir: Path,
     data_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -120,17 +121,21 @@ def run_step18(
         prefix: Structure identifier
         working_dir: Working directory containing input/output
         data_dir: Reference data directory
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 18: Getting alignment mappings for {prefix}")
 
     # Input files
-    confident_file = working_dir / f"{prefix}.step17_confident_predictions"
-    hhsearch_file = working_dir / f"{prefix}.map2ecod.result"  # Step 5 output
-    dali_file = working_dir / f"{prefix}_good_hits"  # Step 9 output
+    confident_file = resolver.step_dir(17) / f"{prefix}.step17_confident_predictions"
+    hhsearch_file = resolver.step_dir(5) / f"{prefix}.map2ecod.result"  # Step 5 output
+    dali_file = resolver.step_dir(8) / f"{prefix}_good_hits"  # Step 9 output
 
     # Check inputs
     if not confident_file.exists():
@@ -168,7 +173,7 @@ def run_step18(
         logger.warning(f"ECOD_length file not found: {ecod_length_file}")
 
     # Output file
-    output_file = working_dir / f"{prefix}.step18_mappings"
+    output_file = resolver.step_dir(18) / f"{prefix}.step18_mappings"
 
     # Load HHsearch hits from map2ecod.result
     # Format: uid  ecod_domain_id  hh_prob  ...  query_range  template_range  ...

@@ -150,6 +150,7 @@ def run_step24(
     prefix: str,
     working_dir: Path,
     data_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -159,16 +160,20 @@ def run_step24(
         prefix: Structure identifier
         working_dir: Working directory containing input/output
         data_dir: Reference data directory
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 24: Integrating SSE analysis for {prefix}")
 
     # Input files
-    predictions_file = working_dir / f"{prefix}.step23_predictions"
-    sse_file = working_dir / f"{prefix}.sse"
+    predictions_file = resolver.step_dir(23) / f"{prefix}.step23_predictions"
+    sse_file = resolver.step_dir(11) / f"{prefix}.sse"
 
     # Check inputs
     if not predictions_file.exists():
@@ -318,7 +323,7 @@ def run_step24(
     results.sort(key=lambda x: x['mean_resid'])
 
     # Output directory
-    output_dir = working_dir / "step24"
+    output_dir = resolver.step_dir(24)
     output_dir.mkdir(exist_ok=True)
 
     # Write per-protein file
@@ -341,13 +346,22 @@ def run_step24(
     logger.info(f"Step 24 complete: {len(results)} domains integrated")
 
     # Update the main .finalDPAM.domains file with merged domains
-    final_domains_file = working_dir / f"{prefix}.finalDPAM.domains"
+    # Write to resolver.root for backward compatibility
+    final_domains_root = resolver.root / f"{prefix}.finalDPAM.domains"
+    # Write to results_dir for sharded output
+    final_domains_results = resolver.results_dir() / f"{prefix}.finalDPAM.domains"
 
-    with open(final_domains_file, 'w') as f:
-        for i, result in enumerate(results, 1):
-            f.write(f"nD{i}\t{result['domain_range']}\n")
+    domain_lines = []
+    for i, result in enumerate(results, 1):
+        domain_lines.append(f"nD{i}\t{result['domain_range']}\n")
 
-    logger.info(f"Updated {final_domains_file.name} with {len(results)} domains")
+    with open(final_domains_root, 'w') as f:
+        f.writelines(domain_lines)
+
+    with open(final_domains_results, 'w') as f:
+        f.writelines(domain_lines)
+
+    logger.info(f"Updated {final_domains_root.name} with {len(results)} domains")
 
     # Summary statistics
     label_counts = {}

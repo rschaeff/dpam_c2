@@ -22,23 +22,28 @@ def run_step3(
     prefix: str,
     working_dir: Path,
     data_dir: Path,
-    threads: int = 1
+    threads: int = 1,
+    path_resolver=None
 ) -> bool:
     """
     Run Step 3: Foldseek structure search.
-    
+
     Searches query structure against ECOD database using Foldseek
     to find structural similarities.
-    
+
     Args:
         prefix: Structure prefix
         working_dir: Working directory
         data_dir: Directory containing ECOD_foldseek_DB
         threads: Number of threads
-    
+        path_resolver: Optional PathResolver for sharded output directories
+
     Returns:
         True if successful
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"=== Step 3: Foldseek Structure Search for {prefix} ===")
 
     try:
@@ -46,15 +51,16 @@ def run_step3(
         working_dir = working_dir.resolve()
         data_dir = data_dir.resolve()
 
-        # Check input files
-        pdb_file = working_dir / f'{prefix}.pdb'
+        # Input from step 1
+        pdb_file = resolver.step_dir(1) / f'{prefix}.pdb'
         if not pdb_file.exists():
             logger.error(f"PDB file not found: {pdb_file}")
             return False
 
-        # Define output and database paths
-        output_file = working_dir / f'{prefix}.foldseek'
-        tmp_dir = working_dir / f'foldseek_tmp_{prefix}'  # Unique per protein to avoid race condition
+        # Output to step 3 directory
+        step3_dir = resolver.step_dir(3)
+        output_file = step3_dir / f'{prefix}.foldseek'
+        tmp_dir = step3_dir / f'foldseek_tmp_{prefix}'  # Unique per protein to avoid race condition
 
         # Foldseek database files are in data_dir directly, not in subdirectory
         database = data_dir / 'ECOD_foldseek_DB'
@@ -107,7 +113,8 @@ def run_step3_batch(
     proteins: List[str],
     working_dir: Path,
     data_dir: Path,
-    threads: int = 1
+    threads: int = 1,
+    path_resolver=None
 ) -> Dict[str, bool]:
     """
     Run Step 3 for multiple proteins using batch foldseek workflow.
@@ -120,10 +127,14 @@ def run_step3_batch(
         working_dir: Working directory containing PDB files
         data_dir: Directory containing ECOD_foldseek_DB
         threads: Number of threads for foldseek search
+        path_resolver: Optional PathResolver for sharded output directories
 
     Returns:
         Dict mapping protein prefix to success (True/False)
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(
         f"=== Step 3 Batch: Foldseek for {len(proteins)} proteins ==="
     )
@@ -140,10 +151,11 @@ def run_step3_batch(
             results[p] = False
         return results
 
-    # Filter to proteins that have PDB files
+    # Filter to proteins that have PDB files (from step 1)
+    step1_dir = resolver.step_dir(1)
     valid_proteins = []
     for p in proteins:
-        pdb_file = working_dir / f'{p}.pdb'
+        pdb_file = step1_dir / f'{p}.pdb'
         if pdb_file.exists():
             valid_proteins.append(p)
         else:
@@ -155,16 +167,19 @@ def run_step3_batch(
         return results
 
     # Set up batch directories
-    batch_dir = working_dir / '_foldseek_batch'
+    batch_dir = resolver.batch_dir() / '_foldseek_batch'
     query_pdb_dir = batch_dir / 'query_pdbs'
     query_pdb_dir.mkdir(parents=True, exist_ok=True)
+
+    # Output directory for per-protein results
+    step3_dir = resolver.step_dir(3)
 
     try:
         foldseek = Foldseek()
 
         # Create symlinks to query PDB files
         for p in valid_proteins:
-            src = working_dir / f'{p}.pdb'
+            src = step1_dir / f'{p}.pdb'
             dst = query_pdb_dir / f'{p}.pdb'
             if dst.exists():
                 dst.unlink()
@@ -199,12 +214,12 @@ def run_step3_batch(
         # Split combined output into per-protein files
         logger.info("Splitting results into per-protein files...")
         hit_counts = _split_foldseek_results(
-            combined_output, working_dir, valid_proteins
+            combined_output, step3_dir, valid_proteins
         )
 
         for p in valid_proteins:
             n_hits = hit_counts.get(p, 0)
-            output_file = working_dir / f'{p}.foldseek'
+            output_file = step3_dir / f'{p}.foldseek'
             if output_file.exists():
                 logger.info(f"  {p}: {n_hits} hits")
                 results[p] = True

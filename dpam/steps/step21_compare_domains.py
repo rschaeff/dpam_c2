@@ -164,6 +164,7 @@ def get_structure_distance(
 def run_step21(
     prefix: str,
     working_dir: Path,
+    path_resolver=None,
     **kwargs
 ) -> bool:
     """
@@ -172,17 +173,21 @@ def run_step21(
     Args:
         prefix: Structure identifier
         working_dir: Working directory containing input/output
+        path_resolver: PathResolver instance for sharded output directories
         **kwargs: Additional arguments (unused)
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 21: Comparing domain connectivity for {prefix}")
 
     # Input files
-    merge_file = working_dir / f"{prefix}.step19_merge_candidates"
-    domains_file = working_dir / f"{prefix}.step13_domains"
-    step20_dir = working_dir / "step20"
+    merge_file = resolver.step_dir(19) / f"{prefix}.step19_merge_candidates"
+    domains_file = resolver.step_dir(13) / f"{prefix}.step13_domains"
+    step20_dir = resolver.step_dir(20)
 
     # Check inputs
     if not merge_file.exists():
@@ -194,7 +199,7 @@ def run_step21(
         return False
 
     # Output file
-    output_file = working_dir / f"{prefix}.step21_comparisons"
+    output_file = resolver.step_dir(21) / f"{prefix}.step21_comparisons"
 
     # Load all structured residues (ordered)
     structured_resids: List[int] = []

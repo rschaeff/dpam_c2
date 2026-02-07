@@ -347,7 +347,8 @@ def run_step8(
     prefix: str,
     working_dir: Path,
     reference_data: ReferenceData,
-    data_dir: Path
+    data_dir: Path,
+    path_resolver=None
 ) -> bool:
     """
     Run step 8: Analyze DALI results.
@@ -357,14 +358,18 @@ def run_step8(
         working_dir: Working directory
         reference_data: ECOD reference data
         data_dir: Path to data directory
+        path_resolver: Optional PathResolver for sharded output directories
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 8: Analyzing DALI results for {prefix}")
 
     # Input file
-    hits_file = working_dir / f'{prefix}_iterativdDali_hits'
+    hits_file = resolver.step_dir(7) / f'{prefix}_iterativdDali_hits'
 
     if not hits_file.exists():
         logger.error(f"DALI hits file not found: {hits_file}")
@@ -378,7 +383,7 @@ def run_step8(
     if not raw_hits:
         logger.warning("No DALI hits found")
         # Create empty output file
-        output_file = working_dir / f'{prefix}_good_hits'
+        output_file = resolver.step_dir(8) / f'{prefix}_good_hits'
         write_good_hits(output_file, [])
         return True
 
@@ -392,7 +397,7 @@ def run_step8(
     final_hits = calculate_ranks_and_ranges(analyzed_hits)
 
     # Write output
-    output_file = working_dir / f'{prefix}_good_hits'
+    output_file = resolver.step_dir(8) / f'{prefix}_good_hits'
     logger.info(f"Writing results to {output_file}")
     write_good_hits(output_file, final_hits)
 

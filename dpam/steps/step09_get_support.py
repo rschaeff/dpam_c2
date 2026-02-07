@@ -453,7 +453,8 @@ def write_structure_results(output_file: Path, hits: List[Dict]) -> None:
 def run_step9(
     prefix: str,
     working_dir: Path,
-    reference_data: ReferenceData
+    reference_data: ReferenceData,
+    path_resolver=None
 ) -> bool:
     """
     Run step 9: Get sequence and structure support.
@@ -462,15 +463,19 @@ def run_step9(
         prefix: Structure prefix
         working_dir: Working directory
         reference_data: ECOD reference data
+        path_resolver: Optional PathResolver for sharded output directories
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 9: Getting sequence and structure support for {prefix}")
 
     # Input files
-    map_file = working_dir / f'{prefix}.map2ecod.result'
-    good_hits_file = working_dir / f'{prefix}_good_hits'
+    map_file = resolver.step_dir(5) / f'{prefix}.map2ecod.result'
+    good_hits_file = resolver.step_dir(8) / f'{prefix}_good_hits'
 
     # Check map file exists
     if not map_file.exists():
@@ -488,7 +493,7 @@ def run_step9(
     logger.info(f"Filtered to {len(filtered_seq_hits)} sequence hits")
 
     # Write sequence results
-    seq_output = working_dir / f'{prefix}_sequence.result'
+    seq_output = resolver.step_dir(9) / f'{prefix}_sequence.result'
     logger.info(f"Writing sequence results to {seq_output}")
     write_sequence_results(seq_output, filtered_seq_hits)
 
@@ -499,7 +504,7 @@ def run_step9(
         logger.info(f"Processed {len(struct_hits)} structure hits")
 
         # Write structure results
-        struct_output = working_dir / f'{prefix}_structure.result'
+        struct_output = resolver.step_dir(9) / f'{prefix}_structure.result'
         logger.info(f"Writing structure results to {struct_output}")
         write_structure_results(struct_output, struct_hits)
     else:

@@ -229,7 +229,20 @@ def load_pae_matrix(json_file: Path) -> Dict[int, Dict[int, float]]:
     rpair2error = {}
 
     if 'predicted_aligned_error' in json_dict:
+        # AlphaFold 2 format
         paes = json_dict['predicted_aligned_error']
+        length = len(paes)
+
+        for i in range(length):
+            res1 = i + 1
+            rpair2error[res1] = {}
+            for j in range(length):
+                res2 = j + 1
+                rpair2error[res1][res2] = paes[i][j]
+
+    elif 'pae' in json_dict:
+        # AlphaFold 3 format
+        paes = json_dict['pae']
         length = len(paes)
 
         for i in range(length):
@@ -824,25 +837,29 @@ def filter_by_length(domains: List[List[int]], min_length: int = 20) -> List[Lis
     return [d for d in domains if len(d) >= min_length]
 
 
-def run_step13(prefix: str, working_dir: Path) -> bool:
+def run_step13(prefix: str, working_dir: Path, path_resolver=None) -> bool:
     """
     Run step 13: Parse final domains.
 
     Args:
         prefix: Structure prefix
         working_dir: Working directory
+        path_resolver: PathResolver instance for sharded output directories
 
     Returns:
         True if successful, False otherwise
     """
+    from dpam.core.path_resolver import PathResolver
+    resolver = path_resolver or PathResolver(working_dir, sharded=False)
+
     logger.info(f"Step 13: Parsing domains for {prefix}")
 
     # Input files
-    fasta_file = working_dir / f'{prefix}.fa'
-    diso_file = working_dir / f'{prefix}.diso'
-    pdb_file = working_dir / f'{prefix}.pdb'
-    json_file = working_dir / f'{prefix}.json'
-    gooddomains_file = working_dir / f'{prefix}.goodDomains'
+    fasta_file = resolver.step_dir(1) / f'{prefix}.fa'
+    diso_file = resolver.step_dir(12) / f'{prefix}.diso'
+    pdb_file = resolver.step_dir(1) / f'{prefix}.pdb'
+    json_file = resolver.root / f'{prefix}.json'
+    gooddomains_file = resolver.step_dir(10) / f'{prefix}.goodDomains'
 
     # Check required files
     for file in [fasta_file, pdb_file, json_file]:
@@ -914,8 +931,11 @@ def run_step13(prefix: str, working_dir: Path) -> bool:
     logger.info(f"Final domains: {len(final_domains)}")
 
     # Write output (two filenames for compatibility)
-    output_file = working_dir / f'{prefix}.finalDPAM.domains'
-    step13_file = working_dir / f'{prefix}.step13_domains'
+    step13_dir = resolver.step_dir(13)
+    results_dir = resolver.results_dir()
+    output_file = step13_dir / f'{prefix}.finalDPAM.domains'
+    results_file = results_dir / f'{prefix}.finalDPAM.domains'
+    step13_file = step13_dir / f'{prefix}.step13_domains'
     logger.info(f"Writing final domains to {output_file}")
 
     domain_lines = []
@@ -923,8 +943,12 @@ def run_step13(prefix: str, working_dir: Path) -> bool:
         range_str = residues_to_range(sorted(domain))
         domain_lines.append(f"D{i}\t{range_str}\n")
 
-    # Write .finalDPAM.domains (main output)
+    # Write .finalDPAM.domains to step dir
     with open(output_file, 'w') as f:
+        f.writelines(domain_lines)
+
+    # Write .finalDPAM.domains to results dir
+    with open(results_file, 'w') as f:
         f.writelines(domain_lines)
 
     # Write .step13_domains (for ML pipeline compatibility)
