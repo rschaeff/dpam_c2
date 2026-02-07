@@ -189,6 +189,15 @@ Examples:
                                      help='Use flat directory layout (all files in working dir). '
                                           'Default: sharded (per-step subdirectories).')
 
+    # Migrate layout command
+    migrate_parser = subparsers.add_parser(
+        'migrate-layout',
+        help='Migrate flat working directory to sharded (per-step subdirectory) layout')
+    migrate_parser.add_argument('--working-dir', type=Path, required=True,
+                                 help='Working directory to migrate')
+    migrate_parser.add_argument('--dry-run', action='store_true',
+                                 help='Print actions without modifying files')
+
     # Batch status command
     status_parser = subparsers.add_parser(
         'batch-status', help='Show batch processing status')
@@ -219,6 +228,8 @@ Examples:
         return submit_slurm(args)
     elif args.command == 'slurm-batch':
         return submit_slurm_batch(args)
+    elif args.command == 'migrate-layout':
+        return migrate_layout(args)
     elif args.command == 'batch-status':
         return show_batch_status(args)
 
@@ -457,6 +468,24 @@ def submit_slurm_batch(args) -> int:
     print(f"  Monitor: dpam batch-status --working-dir {args.working_dir}")
 
     return 0
+
+
+def migrate_layout(args) -> int:
+    """Migrate flat working directory to sharded layout"""
+    from dpam.pipeline.migrate import migrate_flat_to_sharded
+
+    try:
+        counts = migrate_flat_to_sharded(
+            working_dir=args.working_dir,
+            dry_run=args.dry_run,
+        )
+        return 1 if counts['errors'] > 0 else 0
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        return 1
+    except Exception as e:
+        logger.error(f"Migration failed: {e}", exc_info=True)
+        return 1
 
 
 def show_batch_status(args) -> int:
