@@ -1,7 +1,11 @@
 """
 Foldseek tool wrapper.
+
+Supports both single-query (easy-search) and batch (createdb + search +
+convertalis) workflows.
 """
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -14,10 +18,20 @@ logger = get_logger('tools.foldseek')
 class Foldseek(ExternalTool):
     """
     Wrapper for Foldseek structure search tool.
+
+    For single proteins, use easy_search() (convenience wrapper).
+    For batch processing, use createdb() + search() + convertalis()
+    to amortize index loading across many queries.
     """
 
     def __init__(self):
         super().__init__('foldseek', check_available=True, required=True)
+
+    def _get_env(self):
+        """Get environment with OMP_PROC_BIND=false for SLURM compatibility."""
+        env = os.environ.copy()
+        env['OMP_PROC_BIND'] = 'false'
+        return env
 
     def run(self, **kwargs):
         """
@@ -125,3 +139,105 @@ class Foldseek(ExternalTool):
         if tmp_dir.exists():
             shutil.rmtree(tmp_dir)
             logger.debug(f"Cleaned up tmp directory: {tmp_dir}")
+
+    def createdb(
+        self,
+        input_path: Path,
+        output_db: Path,
+        threads: int = 1
+    ) -> None:
+        """
+        Create a foldseek structure database from PDB/mmCIF files.
+
+        Args:
+            input_path: Directory containing PDB files, or TSV list file
+            output_db: Output database path (without extension)
+            threads: Number of threads
+        """
+        cmd = [
+            self.executable, 'createdb',
+            str(input_path),
+            str(output_db),
+            '--threads', str(threads),
+            '-v', '0'
+        ]
+
+        log_file = Path(str(output_db) + '.createdb.log')
+        self._execute(cmd, log_file=log_file, env=self._get_env())
+
+        if not Path(str(output_db)).exists():
+            raise RuntimeError(f"foldseek createdb failed: {output_db} not created")
+
+        logger.info(f"Created query database: {output_db}")
+
+    def search(
+        self,
+        query_db: Path,
+        target_db: Path,
+        result_db: Path,
+        tmp_dir: Path,
+        threads: int = 1,
+        evalue: float = 1000000,
+        max_seqs: int = 1000000
+    ) -> None:
+        """
+        Run foldseek search (query DB vs target DB).
+
+        Args:
+            query_db: Query database path
+            target_db: Target database path
+            result_db: Output result database path
+            tmp_dir: Temporary directory
+            threads: Number of threads
+            evalue: E-value threshold
+            max_seqs: Maximum sequences per query
+        """
+        tmp_dir = Path(tmp_dir)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            self.executable, 'search',
+            str(query_db),
+            str(target_db),
+            str(result_db),
+            str(tmp_dir),
+            '-e', str(evalue),
+            '--max-seqs', str(max_seqs),
+            '--threads', str(threads),
+            '-v', '0'
+        ]
+
+        log_file = Path(str(result_db) + '.search.log')
+        self._execute(cmd, log_file=log_file, env=self._get_env())
+
+        logger.info(f"Search complete: results in {result_db}")
+
+    def convertalis(
+        self,
+        query_db: Path,
+        target_db: Path,
+        result_db: Path,
+        output_file: Path
+    ) -> None:
+        """
+        Convert foldseek result database to BLAST-tab format.
+
+        Args:
+            query_db: Query database path
+            target_db: Target database path
+            result_db: Result database path
+            output_file: Output TSV file
+        """
+        cmd = [
+            self.executable, 'convertalis',
+            str(query_db),
+            str(target_db),
+            str(result_db),
+            str(output_file),
+            '-v', '0'
+        ]
+
+        log_file = Path(str(output_file) + '.convertalis.log')
+        self._execute(cmd, log_file=log_file, env=self._get_env())
+
+        logger.info(f"Converted alignments to {output_file}")

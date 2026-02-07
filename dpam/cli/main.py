@@ -94,7 +94,31 @@ Examples:
     batch_parser.add_argument('--log-dir', type=Path,
                              help='Directory for individual log files')
     
-    # SLURM submit command
+    # Batch-run command (step-first, resource-efficient)
+    batch_run_parser = subparsers.add_parser(
+        'batch-run',
+        help='Process structures step-first (optimized for large batches)')
+    batch_run_parser.add_argument('prefix_file', type=Path,
+                                  help='File with structure prefixes (one per line)')
+    batch_run_parser.add_argument('--working-dir', type=Path, required=True,
+                                  help='Working directory')
+    batch_run_parser.add_argument('--data-dir', type=Path, required=True,
+                                  help='Data directory')
+    batch_run_parser.add_argument('--cpus', type=int, default=4,
+                                  help='Number of CPUs')
+    batch_run_parser.add_argument('--resume', action='store_true',
+                                  help='Resume from batch state checkpoint')
+    batch_run_parser.add_argument('--steps', nargs='+',
+                                  choices=[s.name for s in PipelineStep],
+                                  help='Specific steps to run (default: all)')
+    batch_run_parser.add_argument('--log-file', type=Path,
+                                  help='Log file path')
+    batch_run_parser.add_argument('--json-log', action='store_true',
+                                  help='Use JSON logging format')
+    batch_run_parser.add_argument('--skip-addss', action='store_true',
+                                  help='Skip addss.pl (requires PSIPRED)')
+
+    # SLURM submit command (protein-first array jobs)
     slurm_parser = subparsers.add_parser('slurm-submit', help='Submit SLURM job array')
     slurm_parser.add_argument('prefix_file', type=Path,
                              help='File with structure prefixes')
@@ -111,6 +135,34 @@ Examples:
     slurm_parser.add_argument('--partition', help='SLURM partition')
     slurm_parser.add_argument('--array-size', type=int, default=100,
                              help='Maximum concurrent array tasks')
+
+    # SLURM batch command (step-first single node)
+    slurm_batch_parser = subparsers.add_parser(
+        'slurm-batch',
+        help='Submit single-node step-first SLURM job (optimized)')
+    slurm_batch_parser.add_argument('prefix_file', type=Path,
+                                     help='File with structure prefixes')
+    slurm_batch_parser.add_argument('--working-dir', type=Path, required=True,
+                                     help='Working directory')
+    slurm_batch_parser.add_argument('--data-dir', type=Path, required=True,
+                                     help='Data directory')
+    slurm_batch_parser.add_argument('--cpus', type=int, default=16,
+                                     help='Total CPUs for batch job')
+    slurm_batch_parser.add_argument('--mem', default='64G',
+                                     help='Total memory (e.g., 64G)')
+    slurm_batch_parser.add_argument('--time', default='24:00:00',
+                                     help='Time limit (HH:MM:SS)')
+    slurm_batch_parser.add_argument('--partition', help='SLURM partition')
+    slurm_batch_parser.add_argument('--skip-addss', action='store_true',
+                                     help='Skip addss.pl (requires PSIPRED)')
+    slurm_batch_parser.add_argument('--dry-run', action='store_true',
+                                     help='Generate script without submitting')
+
+    # Batch status command
+    status_parser = subparsers.add_parser(
+        'batch-status', help='Show batch processing status')
+    status_parser.add_argument('--working-dir', type=Path, required=True,
+                               help='Working directory with _batch_state.json')
     
     args = parser.parse_args()
     
@@ -130,9 +182,15 @@ Examples:
         return run_single_step(args)
     elif args.command == 'batch':
         return run_batch(args)
+    elif args.command == 'batch-run':
+        return run_batch_stepwise(args)
     elif args.command == 'slurm-submit':
         return submit_slurm(args)
-    
+    elif args.command == 'slurm-batch':
+        return submit_slurm_batch(args)
+    elif args.command == 'batch-status':
+        return show_batch_status(args)
+
     return 0
 
 
@@ -230,6 +288,48 @@ def run_batch(args) -> int:
     return 0 if n_failed == 0 else 1
 
 
+def run_batch_stepwise(args) -> int:
+    """Run step-first batch processing (optimized for large batches)"""
+    from dpam.pipeline.batch_runner import BatchRunner
+
+    # Read prefixes
+    with open(args.prefix_file, 'r') as f:
+        proteins = [line.strip() for line in f if line.strip()]
+
+    logger.info(f"Step-first batch processing for {len(proteins)} structures")
+
+    # Parse steps
+    steps = None
+    if args.steps:
+        steps = [PipelineStep[s] for s in args.steps]
+
+    skip_addss = getattr(args, 'skip_addss', False)
+
+    try:
+        runner = BatchRunner(
+            proteins=proteins,
+            working_dir=args.working_dir,
+            data_dir=args.data_dir,
+            cpus=args.cpus,
+            resume=args.resume,
+            skip_addss=skip_addss
+        )
+
+        runner.run(steps=steps)
+
+        # Check for failures
+        summary = runner.state.get_summary()
+        total_failed = sum(c['failed'] for c in summary.values())
+        if total_failed > 0:
+            logger.warning(f"Batch completed with {total_failed} step failures")
+            return 1
+        return 0
+
+    except Exception as e:
+        logger.error(f"Batch run failed: {e}", exc_info=True)
+        return 1
+
+
 def submit_slurm(args) -> int:
     """Submit SLURM job array"""
     from dpam.pipeline.slurm import submit_slurm_array
@@ -254,6 +354,104 @@ def submit_slurm(args) -> int:
     logger.info(f"Submitted job array: {job_id}")
     print(f"Job ID: {job_id}")
     
+    return 0
+
+
+def submit_slurm_batch(args) -> int:
+    """Submit single-node step-first SLURM batch job"""
+    from dpam.pipeline.slurm import generate_batch_slurm_script, submit_batch_slurm
+
+    with open(args.prefix_file, 'r') as f:
+        prefixes = [line.strip() for line in f if line.strip()]
+
+    skip_addss = getattr(args, 'skip_addss', False)
+
+    if args.dry_run:
+        script = generate_batch_slurm_script(
+            prefixes=prefixes,
+            working_dir=args.working_dir,
+            data_dir=args.data_dir,
+            cpus=args.cpus,
+            mem=args.mem,
+            time_limit=args.time,
+            partition=args.partition,
+            skip_addss=skip_addss
+        )
+        script_file = args.working_dir / 'dpam_batch.sh'
+        with open(script_file, 'w') as f:
+            f.write(script)
+        print(f"SLURM script written to {script_file}")
+        print(f"Submit with: sbatch {script_file}")
+        return 0
+
+    job_id = submit_batch_slurm(
+        prefixes=prefixes,
+        working_dir=args.working_dir,
+        data_dir=args.data_dir,
+        cpus=args.cpus,
+        mem=args.mem,
+        time_limit=args.time,
+        partition=args.partition,
+        skip_addss=skip_addss
+    )
+
+    print(f"Submitted batch job: {job_id}")
+    print(f"  Proteins: {len(prefixes)}")
+    print(f"  CPUs: {args.cpus}")
+    print(f"  Monitor: dpam batch-status --working-dir {args.working_dir}")
+
+    return 0
+
+
+def show_batch_status(args) -> int:
+    """Show batch processing status"""
+    import json
+
+    state_file = args.working_dir / '_batch_state.json'
+    if not state_file.exists():
+        print(f"No batch state found in {args.working_dir}")
+        return 1
+
+    with open(state_file) as f:
+        state = json.load(f)
+
+    if not state:
+        print("Batch state is empty (no steps processed yet)")
+        return 0
+
+    # Collect all proteins
+    all_proteins = set()
+    for step_data in state.values():
+        all_proteins.update(step_data.keys())
+
+    print(f"Batch status: {len(all_proteins)} proteins")
+    print(f"{'Step':<25} {'Complete':>8} {'Failed':>8} {'Pending':>8}")
+    print("-" * 51)
+
+    for step in PipelineStep:
+        step_data = state.get(step.name, {})
+        if not step_data:
+            continue
+        complete = sum(1 for s in step_data.values() if s == "complete")
+        failed = sum(1 for s in step_data.values()
+                     if isinstance(s, str) and s.startswith("failed"))
+        pending = len(all_proteins) - complete - failed
+        print(f"{step.name:<25} {complete:>8} {failed:>8} {pending:>8}")
+
+    # Show failures if any
+    failures = []
+    for step_name, step_data in state.items():
+        for protein, status in step_data.items():
+            if isinstance(status, str) and status.startswith("failed"):
+                failures.append((step_name, protein, status))
+
+    if failures:
+        print(f"\nFailures ({len(failures)}):")
+        for step_name, protein, status in failures[:20]:
+            print(f"  {step_name} / {protein}: {status}")
+        if len(failures) > 20:
+            print(f"  ... and {len(failures) - 20} more")
+
     return 0
 
 

@@ -1,10 +1,16 @@
 """
 Step 3: Foldseek Structure Search.
 
-Runs Foldseek easy-search to find structural homologs in ECOD database.
+Runs Foldseek to find structural homologs in ECOD database.
+
+Single-protein mode uses easy-search (one foldseek invocation per protein).
+Batch mode uses createdb + search + convertalis (one invocation for all
+proteins, amortizing target DB index loading).
 """
 
+import shutil
 from pathlib import Path
+from typing import Dict, List
 
 from dpam.tools.foldseek import Foldseek
 from dpam.utils.logging_config import get_logger
@@ -95,3 +101,169 @@ def run_step3(
         logger.error(f"Step 3 failed for {prefix}: {e}")
         logger.exception("Exception details:")
         return False
+
+
+def run_step3_batch(
+    proteins: List[str],
+    working_dir: Path,
+    data_dir: Path,
+    threads: int = 1
+) -> Dict[str, bool]:
+    """
+    Run Step 3 for multiple proteins using batch foldseek workflow.
+
+    Uses createdb + search + convertalis instead of per-protein easy-search,
+    loading the target database index once for all queries.
+
+    Args:
+        proteins: List of structure prefixes
+        working_dir: Working directory containing PDB files
+        data_dir: Directory containing ECOD_foldseek_DB
+        threads: Number of threads for foldseek search
+
+    Returns:
+        Dict mapping protein prefix to success (True/False)
+    """
+    logger.info(
+        f"=== Step 3 Batch: Foldseek for {len(proteins)} proteins ==="
+    )
+
+    working_dir = working_dir.resolve()
+    data_dir = data_dir.resolve()
+    results: Dict[str, bool] = {}
+
+    # Check database
+    database = data_dir / 'ECOD_foldseek_DB'
+    if not database.exists():
+        logger.error(f"Foldseek database not found: {database}")
+        for p in proteins:
+            results[p] = False
+        return results
+
+    # Filter to proteins that have PDB files
+    valid_proteins = []
+    for p in proteins:
+        pdb_file = working_dir / f'{p}.pdb'
+        if pdb_file.exists():
+            valid_proteins.append(p)
+        else:
+            logger.warning(f"PDB file not found for {p}, skipping")
+            results[p] = False
+
+    if not valid_proteins:
+        logger.warning("No valid PDB files found for batch foldseek")
+        return results
+
+    # Set up batch directories
+    batch_dir = working_dir / '_foldseek_batch'
+    query_pdb_dir = batch_dir / 'query_pdbs'
+    query_pdb_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        foldseek = Foldseek()
+
+        # Create symlinks to query PDB files
+        for p in valid_proteins:
+            src = working_dir / f'{p}.pdb'
+            dst = query_pdb_dir / f'{p}.pdb'
+            if dst.exists():
+                dst.unlink()
+            dst.symlink_to(src)
+
+        # Step 1: Create query database
+        query_db = batch_dir / 'queryDB'
+        logger.info(
+            f"Creating query database from {len(valid_proteins)} PDB files..."
+        )
+        foldseek.createdb(query_pdb_dir, query_db, threads=threads)
+
+        # Step 2: Search all queries against ECOD DB
+        result_db = batch_dir / 'resultDB'
+        tmp_dir = batch_dir / 'tmp'
+        logger.info(
+            f"Searching {len(valid_proteins)} queries vs ECOD database "
+            f"(threads={threads})..."
+        )
+        foldseek.search(
+            query_db, database, result_db, tmp_dir,
+            threads=threads,
+            evalue=1000000,
+            max_seqs=1000000
+        )
+
+        # Step 3: Convert to tabular format
+        combined_output = batch_dir / 'all_results.tsv'
+        logger.info("Converting alignments to tabular format...")
+        foldseek.convertalis(query_db, database, result_db, combined_output)
+
+        # Split combined output into per-protein files
+        logger.info("Splitting results into per-protein files...")
+        hit_counts = _split_foldseek_results(
+            combined_output, working_dir, valid_proteins
+        )
+
+        for p in valid_proteins:
+            n_hits = hit_counts.get(p, 0)
+            output_file = working_dir / f'{p}.foldseek'
+            if output_file.exists():
+                logger.info(f"  {p}: {n_hits} hits")
+                results[p] = True
+            else:
+                logger.error(f"  {p}: output file not created")
+                results[p] = False
+
+    except Exception as e:
+        logger.error(f"Batch foldseek failed: {e}")
+        logger.exception("Exception details:")
+        # Mark all remaining proteins as failed
+        for p in valid_proteins:
+            if p not in results:
+                results[p] = False
+
+    finally:
+        # Clean up batch directory
+        if batch_dir.exists():
+            shutil.rmtree(batch_dir)
+            logger.debug("Cleaned up batch foldseek directory")
+
+    return results
+
+
+def _split_foldseek_results(
+    combined_file: Path,
+    output_dir: Path,
+    proteins: List[str]
+) -> Dict[str, int]:
+    """
+    Split combined foldseek output into per-protein files.
+
+    Args:
+        combined_file: Combined BLAST-tab output from convertalis
+        output_dir: Directory to write per-protein .foldseek files
+        proteins: List of expected protein prefixes
+
+    Returns:
+        Dict mapping protein prefix to hit count
+    """
+    # Open file handles for all proteins
+    protein_set = set(proteins)
+    file_handles: Dict[str, object] = {}
+    hit_counts: Dict[str, int] = {p: 0 for p in proteins}
+
+    try:
+        for p in proteins:
+            file_handles[p] = open(output_dir / f'{p}.foldseek', 'w')
+
+        with open(combined_file, 'r') as f:
+            for line in f:
+                # Column 1 is the query name (protein prefix)
+                query = line.split('\t', 1)[0]
+                if query in protein_set:
+                    file_handles[query].write(line)
+                    hit_counts[query] += 1
+
+    finally:
+        for fh in file_handles.values():
+            fh.close()
+
+    return hit_counts

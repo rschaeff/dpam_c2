@@ -75,21 +75,30 @@ def get_domain_range(resids: List[int]) -> str:
 def run_dali(args: Tuple) -> bool:
     """
     Run iterative DALI for single ECOD domain - EXACTLY matches v1.0.
-    
+
     This is the worker function for multiprocessing.Pool.
     Replicates v1.0 run_dali() function behavior exactly.
-    
+
     Args:
         args: Tuple of (prefix, edomain, working_dir, data_dir)
-    
+              or (prefix, edomain, working_dir, data_dir, template_cache)
+
     Returns:
         True if any hits found
     """
-    prefix, edomain, working_dir, data_dir = args
+    if len(args) == 5:
+        prefix, edomain, working_dir, data_dir, template_cache = args
+    else:
+        prefix, edomain, working_dir, data_dir = args
+        template_cache = None
     
     # Setup paths - use absolute paths to avoid directory confusion
     query_pdb = (working_dir / f'{prefix}.pdb').resolve()
-    template_pdb_source = (data_dir / 'ECOD70' / f'{edomain}.pdb').resolve()
+    # Use template cache if available, otherwise fall back to ECOD70/
+    if template_cache and (Path(template_cache) / f'{edomain}.pdb').exists():
+        template_pdb_source = (Path(template_cache) / f'{edomain}.pdb').resolve()
+    else:
+        template_pdb_source = (data_dir / 'ECOD70' / f'{edomain}.pdb').resolve()
 
     # Check files exist
     if not query_pdb.exists():
@@ -232,20 +241,24 @@ def run_step7(
     prefix: str,
     working_dir: Path,
     data_dir: Path,
-    cpus: int = 1
+    cpus: int = 1,
+    template_cache: Path = None
 ) -> bool:
     """
     Run Step 7: Iterative DALI alignment.
-    
+
     Processes all ECOD domain candidates from step 6 in parallel,
     running iterative DALI for each domain.
-    
+
     Args:
         prefix: Structure prefix
         working_dir: Working directory
         data_dir: Directory containing ECOD70 templates
         cpus: Number of parallel workers
-    
+        template_cache: Optional path to pre-cached template PDBs.
+            If provided, templates are read from here instead of
+            data_dir/ECOD70/, avoiding redundant NFS reads in batch mode.
+
     Returns:
         True if successful
     """
@@ -291,7 +304,7 @@ def run_step7(
         logger.info(f"Processing {len(edomains)} ECOD domains with {cpus} CPUs")
         
         # Prepare arguments for parallel processing
-        inputs = [(prefix, edomain, working_dir, data_dir) for edomain in edomains]
+        inputs = [(prefix, edomain, working_dir, data_dir, template_cache) for edomain in edomains]
         
         # Run in parallel (match v1.0 multiprocessing pattern)
         with Pool(processes=cpus) as pool:

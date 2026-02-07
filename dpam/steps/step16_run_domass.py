@@ -32,11 +32,148 @@ Algorithm:
 """
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import logging
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+class DomassModel:
+    """Reusable DOMASS TensorFlow model session.
+
+    Loads the model graph and checkpoint once. Call predict() for each protein's
+    features. Use as context manager or call close() when done.
+
+    Usage:
+        with DomassModel(model_path) as model:
+            for protein in proteins:
+                predictions = model.predict(features)
+    """
+
+    def __init__(self, model_path: Path):
+        try:
+            import tensorflow as tf
+        except ImportError:
+            raise ImportError(
+                "TensorFlow not installed. Install with: pip install tensorflow"
+            )
+
+        self._tf = tf
+        self.batch_size = 100
+
+        # Disable TensorFlow warnings and eager execution (TF2 compat)
+        tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+        tf.compat.v1.disable_eager_execution()
+
+        # Build model graph
+        tf.compat.v1.reset_default_graph()
+        self._sess = tf.compat.v1.Session()
+
+        with tf.name_scope('input'):
+            self._inputs = tf.compat.v1.placeholder(
+                dtype=tf.float32,
+                shape=(self.batch_size, 13),
+                name='inputs'
+            )
+
+        # Hidden layer (must match checkpoint: dense/kernel, dense/bias)
+        hidden = tf.compat.v1.layers.dense(
+            self._inputs,
+            64,
+            activation=tf.nn.relu,
+            name='dense'
+        )
+
+        # Output layer (must match checkpoint: dense_1/kernel, dense_1/bias)
+        logits = tf.compat.v1.layers.dense(
+            hidden,
+            2,
+            activation=None,
+            name='dense_1'
+        )
+
+        self._preds = tf.nn.softmax(logits, name='predictions')
+
+        # Load checkpoint
+        saver = tf.compat.v1.train.Saver()
+        saver.restore(self._sess, str(model_path))
+
+        logger.info(f"Loaded DOMASS model from {model_path}")
+
+    def predict(self, features: np.ndarray) -> np.ndarray:
+        """Run inference on feature matrix.
+
+        Args:
+            features: Array of shape (N, 13)
+
+        Returns:
+            Probability array (N,) for class 1 (correct assignment)
+        """
+        n_samples = len(features)
+        batch_size = self.batch_size
+        all_predictions = []
+
+        if n_samples >= batch_size:
+            # Process full batches
+            n_batches = n_samples // batch_size
+
+            for i in range(n_batches):
+                batch_features = features[i * batch_size : (i + 1) * batch_size]
+                batch_preds = self._sess.run(
+                    self._preds, feed_dict={self._inputs: batch_features}
+                )
+
+                # Extract probability of class 1
+                for j in range(batch_size):
+                    all_predictions.append(batch_preds[j, 1])
+
+                if i % 1000 == 0 and i > 0:
+                    logger.info(f"Processed {i * batch_size}/{n_samples} samples")
+
+            # Handle remaining samples
+            remaining = n_samples - (n_batches * batch_size)
+            if remaining > 0:
+                # Pad with copies to reach batch size
+                last_batch = features[n_batches * batch_size:]
+                padding = features[:batch_size - remaining]
+                padded_batch = np.vstack([last_batch, padding])
+
+                batch_preds = self._sess.run(
+                    self._preds, feed_dict={self._inputs: padded_batch}
+                )
+
+                # Only use predictions for actual samples
+                for j in range(remaining):
+                    all_predictions.append(batch_preds[j, 1])
+
+        else:
+            # Less than one batch - tile/repeat to reach batch size (matches v1.0)
+            fold = batch_size // n_samples + 1
+            pseudo_features = np.tile(features, (fold, 1))
+            padded_batch = pseudo_features[:batch_size]
+
+            batch_preds = self._sess.run(
+                self._preds, feed_dict={self._inputs: padded_batch}
+            )
+
+            # Extract predictions for actual samples only
+            for j in range(n_samples):
+                all_predictions.append(batch_preds[j, 1])
+
+        return np.array(all_predictions)
+
+    def close(self):
+        """Close the TensorFlow session and release resources."""
+        if self._sess is not None:
+            self._sess.close()
+            self._sess = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
 
 
 def load_features(feature_file: Path) -> Tuple[List[List[str]], np.ndarray]:
@@ -111,6 +248,10 @@ def run_domass_model(
     """
     Run DOMASS TensorFlow model.
 
+    Creates a temporary model session, runs inference, and closes.
+    For batch processing multiple proteins, use DomassModel directly
+    to avoid per-call model loading overhead (~22s).
+
     Args:
         features: Feature matrix (N, 13)
         model_path: Path to model checkpoint (without extension)
@@ -118,106 +259,15 @@ def run_domass_model(
     Returns:
         Probability array (N,) for class 1 (correct assignment)
     """
-    try:
-        import tensorflow as tf
-    except ImportError:
-        raise ImportError(
-            "TensorFlow not installed. Install with: pip install tensorflow"
-        )
-
-    # Disable TensorFlow warnings
-    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-
-    n_samples = len(features)
-    batch_size = 100
-
-    # Build model graph (TensorFlow 1.x compatibility mode)
-    tf.compat.v1.reset_default_graph()
-
-    with tf.compat.v1.Session() as sess:
-        # Define model architecture
-        with tf.name_scope('input'):
-            inputs = tf.compat.v1.placeholder(
-                dtype=tf.float32,
-                shape=(batch_size, 13),
-                name='inputs'
-            )
-
-        # Hidden layer (must match checkpoint: dense/kernel, dense/bias)
-        hidden = tf.compat.v1.layers.dense(
-            inputs,
-            64,
-            activation=tf.nn.relu,
-            name='dense'
-        )
-
-        # Output layer (must match checkpoint: dense_1/kernel, dense_1/bias)
-        logits = tf.compat.v1.layers.dense(
-            hidden,
-            2,
-            activation=None,
-            name='dense_1'
-        )
-
-        preds = tf.nn.softmax(logits, name='predictions')
-
-        # Load checkpoint
-        saver = tf.compat.v1.train.Saver()
-        saver.restore(sess, str(model_path))
-
-        logger.info(f"Loaded model from {model_path}")
-
-        # Run inference in batches
-        all_predictions = []
-
-        if n_samples >= batch_size:
-            # Process full batches
-            n_batches = n_samples // batch_size
-
-            for i in range(n_batches):
-                batch_features = features[i * batch_size : (i + 1) * batch_size]
-                batch_preds = sess.run(preds, feed_dict={inputs: batch_features})
-
-                # Extract probability of class 1
-                for j in range(batch_size):
-                    all_predictions.append(batch_preds[j, 1])
-
-                if i % 1000 == 0 and i > 0:
-                    logger.info(f"Processed {i * batch_size}/{n_samples} samples")
-
-            # Handle remaining samples
-            remaining = n_samples - (n_batches * batch_size)
-            if remaining > 0:
-                # Pad with copies to reach batch size
-                last_batch = features[n_batches * batch_size:]
-                padding = features[:batch_size - remaining]
-                padded_batch = np.vstack([last_batch, padding])
-
-                batch_preds = sess.run(preds, feed_dict={inputs: padded_batch})
-
-                # Only use predictions for actual samples
-                for j in range(remaining):
-                    all_predictions.append(batch_preds[j, 1])
-
-        else:
-            # Less than one batch - tile/repeat to reach batch size (matches original v1.0)
-            fold = batch_size // n_samples + 1
-            pseudo_features = np.tile(features, (fold, 1))
-            padded_batch = pseudo_features[:batch_size]
-
-            batch_preds = sess.run(preds, feed_dict={inputs: padded_batch})
-
-            # Extract predictions for actual samples only
-            for j in range(n_samples):
-                all_predictions.append(batch_preds[j, 1])
-
-    return np.array(all_predictions)
+    with DomassModel(model_path) as model:
+        return model.predict(features)
 
 
 def run_step16(
     prefix: str,
     working_dir: Path,
     data_dir: Path,
+    model: Optional[DomassModel] = None,
     **kwargs
 ) -> bool:
     """
@@ -227,6 +277,8 @@ def run_step16(
         prefix: Structure identifier
         working_dir: Working directory containing input/output
         data_dir: Reference data directory
+        model: Pre-loaded DomassModel instance for batch processing.
+               If None, loads model from checkpoint (default single-protein behavior).
         **kwargs: Additional arguments (unused)
 
     Returns:
@@ -241,13 +293,14 @@ def run_step16(
         logger.info(f"No features found for {prefix}")
         return True
 
-    # Model checkpoint
-    model_path = data_dir / "domass_epo29"
+    # Model checkpoint (only needed if no pre-loaded model)
+    if model is None:
+        model_path = data_dir / "domass_epo29"
 
-    if not model_path.with_suffix('.meta').exists():
-        logger.error(f"Model checkpoint not found: {model_path}")
-        logger.error(f"Expected files: {model_path}.meta, {model_path}.index, {model_path}.data-*")
-        return False
+        if not model_path.with_suffix('.meta').exists():
+            logger.error(f"Model checkpoint not found: {model_path}")
+            logger.error(f"Expected files: {model_path}.meta, {model_path}.index, {model_path}.data-*")
+            return False
 
     # Load features
     logger.info("Loading features...")
@@ -262,7 +315,10 @@ def run_step16(
     # Run model
     logger.info("Running TensorFlow model...")
     try:
-        predictions = run_domass_model(features, model_path)
+        if model is not None:
+            predictions = model.predict(features)
+        else:
+            predictions = run_domass_model(features, model_path)
     except Exception as e:
         logger.error(f"Model inference failed: {e}")
         logger.exception("TensorFlow error details:")
