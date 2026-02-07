@@ -77,6 +77,10 @@ dpam batch-run prefixes.txt \
 # Monitor batch progress
 dpam batch-status --working-dir ./work
 
+# Migrate existing flat working directory to sharded layout
+dpam migrate-layout --working-dir ./work --dry-run   # Preview changes
+dpam migrate-layout --working-dir ./work              # Execute migration
+
 # Local parallel processing (protein-first, legacy)
 dpam batch prefixes.txt \
   --working-dir ./work \

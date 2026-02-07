@@ -72,6 +72,28 @@ dpam batch-run prefixes.txt --working-dir ./work --data-dir ./data --cpus 8 --re
 dpam batch-run prefixes.txt --working-dir ./work --data-dir ./data --cpus 8 --flat
 ```
 
+### Migrating existing flat directories
+
+Existing working directories with flat layout can be migrated to sharded:
+
+```bash
+# Preview what will happen (no files modified)
+dpam migrate-layout --working-dir ./work --dry-run
+
+# Execute migration
+dpam migrate-layout --working-dir ./work
+```
+
+The migration tool:
+- Discovers proteins from state files and `.fa` files
+- Moves intermediate files into per-step subdirectories
+- Copies `.pdb` files (keeps originals in root as potential user inputs)
+- Copies `.finalDPAM.domains` to both `step13_parse/` and `results/`
+- Renames existing `step20/` → `step20_extract/`, `step24/` → `step24_integrate/`
+- Moves batch directories (`_foldseek_batch/`, `_dali_template_cache/`) to `_batch/`
+- Never touches `.cif`, `.json`, or state files
+- Is idempotent: safe to run multiple times, aborts if already sharded
+
 ## Implementation
 
 ### PathResolver
