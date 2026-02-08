@@ -350,6 +350,12 @@ def run_step15(
                 query_range = parts[9]
                 template_range = parts[10]
 
+                # Read rotation/translation from columns 11-14 if present
+                rot1 = parts[11] if len(parts) > 11 else 'na'
+                rot2 = parts[12] if len(parts) > 12 else 'na'
+                rot3 = parts[13] if len(parts) > 13 else 'na'
+                trans = parts[14] if len(parts) > 14 else 'na'
+
                 query_resids = parse_range(query_range)
                 raw_template_resids = parse_range(template_range)
 
@@ -369,10 +375,10 @@ def run_step15(
                     'rank': rank,
                     'query_resids': set(query_resids),
                     'template_resids': mapped_template_resids,
-                    'rot1': 'na',  # Not in our pipeline
-                    'rot2': 'na',
-                    'rot3': 'na',
-                    'trans': 'na'
+                    'rot1': rot1,
+                    'rot2': rot2,
+                    'rot3': rot3,
+                    'trans': trans
                 })
 
             except (ValueError, IndexError) as e:

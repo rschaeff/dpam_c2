@@ -67,12 +67,16 @@ def get_range(resids: List[int]) -> str:
     return ','.join(ranges)
 
 
-def parse_dali_hits_file(hits_file: Path) -> List[Tuple[str, float, List[Tuple[int, int]]]]:
+def parse_dali_hits_file(hits_file: Path) -> List[Tuple[str, float, List[Tuple[int, int]], str, str, str, str]]:
     """
     Parse DALI hits file from step 7.
 
     Format:
         >{hitname}\t{zscore}\t{n_aligned}\t{q_len}\t{t_len}
+        rotation\tval1\tval2\tval3
+        rotation\tval1\tval2\tval3
+        rotation\tval1\tval2\tval3
+        translation\tval1\tval2\tval3
         {query_resid}\t{template_resid}
         ...
 
@@ -80,8 +84,9 @@ def parse_dali_hits_file(hits_file: Path) -> List[Tuple[str, float, List[Tuple[i
         hits_file: Path to _iterativdDali_hits file
 
     Returns:
-        List of (hitname, zscore, alignments)
+        List of (hitname, zscore, alignments, rot1, rot2, rot3, trans)
         where alignments = [(query_resid, template_resid), ...]
+        and rot1/rot2/rot3/trans are comma-separated value strings
     """
     hits = []
 
@@ -89,29 +94,50 @@ def parse_dali_hits_file(hits_file: Path) -> List[Tuple[str, float, List[Tuple[i
         hitname = ''
         zscore = 0.0
         maps = []
+        rot1 = ''
+        rot2 = ''
+        rot3 = ''
+        trans = ''
+        rotcount = 0
 
         for line in f:
             if line.startswith('>'):
                 # Save previous hit
                 if hitname and maps:
-                    hits.append((hitname, zscore, maps))
+                    hits.append((hitname, zscore, maps, rot1, rot2, rot3, trans))
 
                 # Parse header
                 words = line[1:].split()
                 hitname = words[0]
                 zscore = float(words[1])
                 maps = []
+                rot1 = ''
+                rot2 = ''
+                rot3 = ''
+                trans = ''
+                rotcount = 0
             else:
-                # Parse alignment line
+                # Parse rotation/translation or alignment line
                 words = line.split()
                 if len(words) >= 2:
-                    pres = int(words[0])
-                    eres = int(words[1])
-                    maps.append((pres, eres))
+                    if words[0] == 'rotation':
+                        rotcount += 1
+                        if rotcount == 1:
+                            rot1 = ','.join(words[1:])
+                        elif rotcount == 2:
+                            rot2 = ','.join(words[1:])
+                        elif rotcount == 3:
+                            rot3 = ','.join(words[1:])
+                    elif words[0] == 'translation':
+                        trans = ','.join(words[1:])
+                    else:
+                        pres = int(words[0])
+                        eres = int(words[1])
+                        maps.append((pres, eres))
 
         # Save last hit
         if hitname and maps:
-            hits.append((hitname, zscore, maps))
+            hits.append((hitname, zscore, maps, rot1, rot2, rot3, trans))
 
     return hits
 
@@ -169,7 +195,7 @@ def calculate_percentile(value: float, values: List[float]) -> float:
 
 
 def analyze_hits(
-    raw_hits: List[Tuple[str, float, List[Tuple[int, int]]]],
+    raw_hits: List[Tuple[str, float, List[Tuple[int, int]], str, str, str, str]],
     reference_data: ReferenceData,
     data_dir: Path
 ) -> List[Dict]:
@@ -177,7 +203,7 @@ def analyze_hits(
     Analyze DALI hits with scores and percentiles.
 
     Args:
-        raw_hits: List of (hitname, zscore, alignments)
+        raw_hits: List of (hitname, zscore, alignments, rot1, rot2, rot3, trans)
         reference_data: ECOD reference data
         data_dir: Path to data directory for loading weights/info
 
@@ -186,7 +212,7 @@ def analyze_hits(
     """
     analyzed_hits = []
 
-    for hitname, zscore, alignments in raw_hits:
+    for hitname, zscore, alignments, rot1, rot2, rot3, trans in raw_hits:
         # Extract ECOD number
         ecod_num = hitname.split('_')[0]
 
@@ -225,7 +251,11 @@ def analyze_hits(
                 'qscore': qscore,
                 'ztile': ztile,
                 'qtile': qtile,
-                'alignments': alignments
+                'alignments': alignments,
+                'rot1': rot1,
+                'rot2': rot2,
+                'rot3': rot3,
+                'trans': trans
             })
         else:
             # No weights/info available
@@ -238,7 +268,11 @@ def analyze_hits(
                 'qscore': -1.0,
                 'ztile': -1.0,
                 'qtile': -1.0,
-                'alignments': alignments
+                'alignments': alignments,
+                'rot1': rot1,
+                'rot2': rot2,
+                'rot3': rot3,
+                'trans': trans
             })
 
     return analyzed_hits
@@ -305,7 +339,11 @@ def calculate_ranks_and_ranges(analyzed_hits: List[Dict]) -> List[Dict]:
             'qtile': round(hit['qtile'], 2),
             'rank': ave_rank,
             'qrange': qrange,
-            'erange': erange
+            'erange': erange,
+            'rot1': hit['rot1'] or 'na',
+            'rot2': hit['rot2'] or 'na',
+            'rot3': hit['rot3'] or 'na',
+            'trans': hit['trans'] or 'na'
         })
 
     return final_hits
@@ -316,7 +354,7 @@ def write_good_hits(output_file: Path, hits: List[Dict]) -> None:
     Write analyzed hits to output file.
 
     Format matches v1.0 exactly:
-        hitname\tecodnum\tecodkey\thgroup\tzscore\tqscore\tztile\tqtile\trank\tqrange\terange
+        hitname\tecodnum\tecodkey\thgroup\tzscore\tqscore\tztile\tqtile\trank\tqrange\terange\trotation1\trotation2\trotation3\ttranslation
 
     Args:
         output_file: Path to output file
@@ -324,7 +362,7 @@ def write_good_hits(output_file: Path, hits: List[Dict]) -> None:
     """
     with open(output_file, 'w') as f:
         # Header
-        f.write('hitname\tecodnum\tecodkey\thgroup\tzscore\tqscore\tztile\tqtile\trank\tqrange\terange\n')
+        f.write('hitname\tecodnum\tecodkey\thgroup\tzscore\tqscore\tztile\tqtile\trank\tqrange\terange\trotation1\trotation2\trotation3\ttranslation\n')
 
         # Data rows
         for hit in hits:
@@ -339,7 +377,11 @@ def write_good_hits(output_file: Path, hits: List[Dict]) -> None:
                 f"{hit['qtile']}\t"
                 f"{hit['rank']}\t"
                 f"{hit['qrange']}\t"
-                f"{hit['erange']}\n"
+                f"{hit['erange']}\t"
+                f"{hit['rot1']}\t"
+                f"{hit['rot2']}\t"
+                f"{hit['rot3']}\t"
+                f"{hit['trans']}\n"
             )
 
 

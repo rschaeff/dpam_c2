@@ -37,9 +37,9 @@ class TestStep08AnalyzeDALI:
     @pytest.fixture
     def setup_mock_data_files(self, working_dir):
         """Create mock ecod_weights and ecod_domain_info directories."""
-        # Create directories
-        weights_dir = working_dir / 'ecod_weights'
-        info_dir = working_dir / 'ecod_domain_info'
+        # Create directories (match actual ECOD reference data layout)
+        weights_dir = working_dir / 'posi_weights'
+        info_dir = working_dir / 'ecod_internal'
         weights_dir.mkdir()
         info_dir.mkdir()
 
@@ -158,7 +158,8 @@ X 8.0 0.90
         expected_fields = [
             'hitname', 'ecodnum', 'ecodkey', 'hgroup',
             'zscore', 'qscore', 'ztile', 'qtile', 'rank',
-            'qrange', 'erange'
+            'qrange', 'erange',
+            'rotation1', 'rotation2', 'rotation3', 'translation'
         ]
         assert header == expected_fields, "Header should match expected format"
 
@@ -166,7 +167,7 @@ X 8.0 0.90
         if len(lines) > 1:
             # First data line
             fields = lines[1].strip().split('\t')
-            assert len(fields) == 11, "Data line should have 11 tab-delimited fields"
+            assert len(fields) == 15, "Data line should have 15 tab-delimited fields"
 
             # Field validations
             assert '_' in fields[0], "Hitname should contain underscore"

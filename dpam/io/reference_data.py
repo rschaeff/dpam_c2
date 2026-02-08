@@ -152,7 +152,7 @@ def load_ecod_weights(
     Returns:
         Dict mapping position -> weight, or None if file doesn't exist
     """
-    file_path = data_dir / 'ecod_weights' / f'{ecod_num}.weight'
+    file_path = data_dir / 'posi_weights' / f'{ecod_num}.weight'
     
     if not file_path.exists():
         return None
@@ -184,7 +184,7 @@ def load_ecod_domain_info(
     Returns:
         Tuple of (zscores, qscores), or None if file doesn't exist
     """
-    file_path = data_dir / 'ecod_domain_info' / f'{ecod_num}.info'
+    file_path = data_dir / 'ecod_internal' / f'{ecod_num}.info'
     
     if not file_path.exists():
         return None

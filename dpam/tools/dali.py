@@ -71,7 +71,7 @@ class DALI(ExternalTool):
         output_dir: Path,
         dat1_dir: Optional[Path] = None,
         dat2_dir: Optional[Path] = None
-    ) -> Tuple[Optional[float], List[Tuple[int, int]]]:
+    ) -> Tuple[Optional[float], List[Tuple[int, int]], List[str], List[str]]:
         """
         Run DALI alignment between two structures.
 
@@ -83,8 +83,10 @@ class DALI(ExternalTool):
             dat2_dir: Directory for DAT files (template)
 
         Returns:
-            Tuple of (z_score, alignments)
-            where alignments is list of (query_resid, template_resid) pairs
+            Tuple of (z_score, alignments, rotation_rows, translation_vals)
+            where alignments is list of (query_resid, template_resid) pairs,
+            rotation_rows is list of 3 tab-separated rotation value strings,
+            translation_vals is list of 3 translation value strings
         """
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -140,42 +142,49 @@ class DALI(ExternalTool):
             logger.warning(f"DALI execution had issues: {e}")
 
         # Parse output files
-        z_score, alignments = self._parse_dali_output(output_dir)
+        z_score, alignments, rotation_rows, translation_vals = self._parse_dali_output(output_dir)
 
-        return z_score, alignments
+        return z_score, alignments, rotation_rows, translation_vals
     
     def _parse_dali_output(
         self,
         output_dir: Path
-    ) -> Tuple[Optional[float], List[Tuple[int, int]]]:
+    ) -> Tuple[Optional[float], List[Tuple[int, int]], List[str], List[str]]:
         """
         Parse DALI output files.
-        
+
         Args:
             output_dir: Directory containing DALI output
-        
+
         Returns:
-            Tuple of (z_score, alignments)
+            Tuple of (z_score, alignments, rotation_rows, translation_vals)
+            - rotation_rows: list of 3 tab-separated strings like "val1\tval2\tval3"
+            - translation_vals: list of 3 translation values as strings
         """
         # Find mol*.txt files
         mol_files = list(output_dir.glob('mol*.txt'))
-        
+
         if not mol_files:
             logger.debug("No DALI output files found")
-            return None, []
-        
+            return None, [], [], []
+
         # Read all mol files
         all_lines = []
         for mol_file in mol_files:
             with open(mol_file, 'r') as f:
                 all_lines.extend(f.readlines())
-        
+
         # Parse alignment
         z_score = None
         alignments = []
+        matrix_lines = []  # Raw -matrix lines
+        getit = True  # Only parse first hit (matches v1.0)
 
         for line in all_lines:
             words = line.split()
+
+            if not getit:
+                break
 
             # Parse Z-score from hit line
             # Format: "   1:  mol2-A  6.2  4.7  120   178   13"
@@ -191,6 +200,9 @@ class DALI(ExternalTool):
                     except (ValueError, IndexError):
                         # Not a Z-score line, skip
                         pass
+                elif hit_num == '2':
+                    # Second hit - stop parsing (matches v1.0 behavior)
+                    getit = False
 
             # Parse structural equivalences
             # Format: "   1: mol1-A mol2-A     2 -  25 <=>    1 -  24  ..."
@@ -221,15 +233,37 @@ class DALI(ExternalTool):
                     logger.debug(f"Could not parse alignment segment: {line.strip()} - {e}")
                     pass
 
+            # Parse rotation/translation matrix
+            # Format: -matrix  "mol1-A mol2-A  U(1,.)  rot1 rot2 rot3  trans"
+            # After splitting: words[4:7] = rotation, words[7] = translation (with trailing ")
+            elif len(words) >= 8 and words[0] == "-matrix":
+                matrix_lines.append(line)
+
+        # Extract rotation and translation from -matrix lines
+        rotation_rows = []
+        translation_vals = []
+
+        for mat_line in matrix_lines:
+            # Strip trailing newline and closing quote
+            stripped = mat_line.rstrip()
+            if stripped.endswith('"'):
+                stripped = stripped[:-1]
+            mat_words = stripped.split()
+            if len(mat_words) >= 8:
+                # words[4:7] = 3 rotation values, words[7] = translation value
+                rotation_rows.append('\t'.join(mat_words[4:7]))
+                translation_vals.append(mat_words[7])
+
         if z_score is not None:
             logger.debug(
                 f"Parsed DALI output: z-score={z_score:.2f}, "
-                f"aligned={len(alignments)}"
+                f"aligned={len(alignments)}, "
+                f"rot_rows={len(rotation_rows)}"
             )
         else:
             logger.debug("No DALI hits found")
 
-        return z_score, alignments
+        return z_score, alignments, rotation_rows, translation_vals
 
 
 def run_iterative_dali(
@@ -294,7 +328,7 @@ def run_iterative_dali(
         iteration += 1
         
         # Run DALI
-        z_score, alignments = dali.align(
+        z_score, alignments, _, _ = dali.align(
             work_pdb,
             template_path,
             output_tmp_dir,

@@ -177,7 +177,7 @@ def run_dali(args: Tuple) -> bool:
         while True:
             # Run DALI alignment (absolute paths, so no need to change directory)
             # DALI will change to output_tmp_dir internally via cwd parameter
-            z_score, alignments = dali.align(
+            z_score, alignments, rotation_rows, translation_vals = dali.align(
                 work_pdb,
                 template_pdb,
                 output_tmp_dir,
@@ -208,6 +208,11 @@ def run_dali(args: Tuple) -> bool:
             alicount += 1
             with open(output_file, 'a') as f:
                 f.write(f'>{edomain}_{alicount}\t{z_score}\t{match}\t{qlen}\t{slen}\n')
+                # Write rotation/translation (matches v1.0 format)
+                for rot_row in rotation_rows:
+                    f.write(f'rotation\t{rot_row}\n')
+                if translation_vals:
+                    f.write('translation\t' + '\t'.join(translation_vals) + '\n')
                 for qind, tind in alignments:
                     # Convert alignment index (1-based) to actual residue ID
                     actual_qresid = Qresids[qind - 1]
