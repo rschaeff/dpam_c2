@@ -212,6 +212,10 @@ def analyze_hits(
     """
     analyzed_hits = []
 
+    # Cache for weights and domain info to avoid redundant file I/O
+    weights_cache: Dict[str, Optional[Dict[int, float]]] = {}
+    info_cache: Dict[str, Optional[Tuple[List[float], List[float]]]] = {}
+
     for hitname, zscore, alignments, rot1, rot2, rot3, trans in raw_hits:
         # Extract ECOD number
         ecod_num = hitname.split('_')[0]
@@ -223,11 +227,15 @@ def analyze_hits(
 
         ecod_id, family = reference_data.ecod_metadata[ecod_num]
 
-        # Load weights
-        weights = load_ecod_weights(data_dir, ecod_num)
+        # Load weights (cached)
+        if ecod_num not in weights_cache:
+            weights_cache[ecod_num] = load_ecod_weights(data_dir, ecod_num)
+        weights = weights_cache[ecod_num]
 
-        # Load domain info (historical scores)
-        domain_info = load_ecod_domain_info(data_dir, ecod_num)
+        # Load domain info (cached)
+        if ecod_num not in info_cache:
+            info_cache[ecod_num] = load_ecod_domain_info(data_dir, ecod_num)
+        domain_info = info_cache[ecod_num]
 
         # Calculate scores
         if weights and domain_info:
