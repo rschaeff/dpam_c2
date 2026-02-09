@@ -82,6 +82,14 @@ class DPAMPipeline:
         logger.info("Loading ECOD reference data...")
         self.reference_data = load_ecod_data(data_dir)
         logger.info("Reference data loaded")
+
+        # Try to establish DB connection for fast weight/score lookups
+        from dpam.io.reference_data import get_db_connection
+        self.db_conn = get_db_connection()
+        if self.db_conn:
+            logger.info("DB connection established for weight/score lookups")
+        else:
+            logger.info("No DB connection, using file-based weight/score lookups")
     
     def run(
         self,
@@ -239,7 +247,8 @@ class DPAMPipeline:
         elif step == PipelineStep.ANALYZE_DALI:
             from dpam.steps.step08_analyze_dali import run_step8
             return run_step8(prefix, self.working_dir, self.reference_data,
-                             self.data_dir, path_resolver=r)
+                             self.data_dir, path_resolver=r,
+                             db_conn=self.db_conn)
 
         elif step == PipelineStep.GET_SUPPORT:
             from dpam.steps.step09_get_support import run_step9

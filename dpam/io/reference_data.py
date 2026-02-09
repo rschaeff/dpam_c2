@@ -1,5 +1,10 @@
 """
 Load ECOD reference database files.
+
+Supports both file-based and database-backed loading.
+Database tables (ecod_commons schema):
+  - dpam_position_weights(ecod_num, position, weight)
+  - dpam_domain_scores(ecod_num, hit_ecod_num, zscore, qscore)
 """
 
 from pathlib import Path
@@ -140,20 +145,30 @@ def load_ecod_domains_file(data_dir: Path) -> Dict[str, Tuple[str, str]]:
     return ecod_metadata
 
 
+def _shard_subdir(ecod_num: str) -> str:
+    """Get shard subdirectory from ecod_num (last 2 digits)."""
+    return ecod_num[-2:]
+
+
 def load_ecod_weights(
     data_dir: Path,
     ecod_num: str
 ) -> Optional[Dict[int, float]]:
     """
     Load position weights for specific ECOD domain.
-    
+
     Format: position ... ... weight
-    
+
     Returns:
         Dict mapping position -> weight, or None if file doesn't exist
     """
-    file_path = data_dir / 'posi_weights' / f'{ecod_num}.weight'
-    
+    shard = _shard_subdir(ecod_num)
+    file_path = data_dir / 'posi_weights' / shard / f'{ecod_num}.weight'
+
+    # Fall back to flat layout
+    if not file_path.exists():
+        file_path = data_dir / 'posi_weights' / f'{ecod_num}.weight'
+
     if not file_path.exists():
         return None
     
@@ -184,8 +199,13 @@ def load_ecod_domain_info(
     Returns:
         Tuple of (zscores, qscores), or None if file doesn't exist
     """
-    file_path = data_dir / 'ecod_internal' / f'{ecod_num}.info'
-    
+    shard = _shard_subdir(ecod_num)
+    file_path = data_dir / 'ecod_internal' / shard / f'{ecod_num}.info'
+
+    # Fall back to flat layout
+    if not file_path.exists():
+        file_path = data_dir / 'ecod_internal' / f'{ecod_num}.info'
+
     if not file_path.exists():
         return None
     
@@ -230,3 +250,105 @@ def load_ecod_data(data_dir: Path) -> ReferenceData:
         ecod_weights={},  # Loaded on demand
         ecod_metadata=ecod_metadata
     )
+
+
+def batch_load_weights_db(
+    conn,
+    ecod_nums: List[str]
+) -> Dict[str, Dict[int, float]]:
+    """
+    Batch-load position weights from database for multiple ecod_nums.
+
+    Args:
+        conn: psycopg2 connection
+        ecod_nums: List of ecod_num strings to load
+
+    Returns:
+        Dict mapping ecod_num -> {position: weight}
+    """
+    if not ecod_nums:
+        return {}
+
+    cur = conn.cursor()
+    # Use ANY for batch lookup
+    cur.execute(
+        "SELECT ecod_num, position, weight "
+        "FROM ecod_commons.dpam_position_weights "
+        "WHERE ecod_num = ANY(%s)",
+        (ecod_nums,)
+    )
+
+    result: Dict[str, Dict[int, float]] = {}
+    for ecod_num, position, weight in cur:
+        if ecod_num not in result:
+            result[ecod_num] = {}
+        result[ecod_num][position] = weight
+
+    cur.close()
+    logger.debug(f"Loaded weights for {len(result)}/{len(ecod_nums)} ecod_nums from DB")
+    return result
+
+
+def batch_load_domain_info_db(
+    conn,
+    ecod_nums: List[str]
+) -> Dict[str, Tuple[List[float], List[float]]]:
+    """
+    Batch-load domain z-scores and q-scores from database.
+
+    Args:
+        conn: psycopg2 connection
+        ecod_nums: List of ecod_num strings to load
+
+    Returns:
+        Dict mapping ecod_num -> (zscores_list, qscores_list)
+    """
+    if not ecod_nums:
+        return {}
+
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT ecod_num, zscore, qscore "
+        "FROM ecod_commons.dpam_domain_scores "
+        "WHERE ecod_num = ANY(%s) "
+        "ORDER BY ecod_num",
+        (ecod_nums,)
+    )
+
+    result: Dict[str, Tuple[List[float], List[float]]] = {}
+    for ecod_num, zscore, qscore in cur:
+        if ecod_num not in result:
+            result[ecod_num] = ([], [])
+        result[ecod_num][0].append(zscore)
+        result[ecod_num][1].append(qscore)
+
+    cur.close()
+    logger.debug(f"Loaded domain info for {len(result)}/{len(ecod_nums)} ecod_nums from DB")
+    return result
+
+
+def get_db_connection(
+    host: str = 'dione',
+    port: int = 45000,
+    dbname: str = 'ecod_protein',
+    user: str = 'ecod',
+    password: str = 'ecod#badmin'
+):
+    """
+    Get a psycopg2 connection to the ECOD database.
+
+    Returns:
+        psycopg2 connection, or None if psycopg2 is not available
+    """
+    try:
+        import psycopg2
+        return psycopg2.connect(
+            host=host, port=port, dbname=dbname,
+            user=user, password=password
+        )
+    except ImportError:
+        logger.warning("psycopg2 not available, cannot use DB-backed loading")
+        return None
+    except Exception as e:
+        logger.warning(f"Could not connect to database: {e}")
+        return None

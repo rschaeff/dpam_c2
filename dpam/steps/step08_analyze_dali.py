@@ -22,7 +22,10 @@ from typing import List, Dict, Tuple, Optional, Set
 import numpy as np
 
 from dpam.core.models import DALIAlignment, ReferenceData
-from dpam.io.reference_data import load_ecod_weights, load_ecod_domain_info
+from dpam.io.reference_data import (
+    load_ecod_weights, load_ecod_domain_info,
+    batch_load_weights_db, batch_load_domain_info_db
+)
 from dpam.utils.logging_config import get_logger
 
 logger = get_logger('steps.step08')
@@ -197,7 +200,8 @@ def calculate_percentile(value: float, values: List[float]) -> float:
 def analyze_hits(
     raw_hits: List[Tuple[str, float, List[Tuple[int, int]], str, str, str, str]],
     reference_data: ReferenceData,
-    data_dir: Path
+    data_dir: Path,
+    db_conn=None
 ) -> List[Dict]:
     """
     Analyze DALI hits with scores and percentiles.
@@ -205,16 +209,35 @@ def analyze_hits(
     Args:
         raw_hits: List of (hitname, zscore, alignments, rot1, rot2, rot3, trans)
         reference_data: ECOD reference data
-        data_dir: Path to data directory for loading weights/info
+        data_dir: Path to data directory for loading weights/info (file fallback)
+        db_conn: Optional psycopg2 connection for DB-backed loading
 
     Returns:
         List of analyzed hits with all scores
     """
     analyzed_hits = []
 
-    # Cache for weights and domain info to avoid redundant file I/O
-    weights_cache: Dict[str, Optional[Dict[int, float]]] = {}
-    info_cache: Dict[str, Optional[Tuple[List[float], List[float]]]] = {}
+    # Collect all unique ecod_nums needed
+    ecod_nums_needed = set()
+    for hitname, zscore, alignments, rot1, rot2, rot3, trans in raw_hits:
+        ecod_num = hitname.split('_')[0]
+        if ecod_num in reference_data.ecod_metadata:
+            ecod_nums_needed.add(ecod_num)
+
+    ecod_nums_list = list(ecod_nums_needed)
+
+    # Batch-load weights and domain info
+    if db_conn is not None:
+        logger.info(f"Loading weights and scores for {len(ecod_nums_list)} ecod_nums from DB")
+        weights_cache = batch_load_weights_db(db_conn, ecod_nums_list)
+        info_cache = batch_load_domain_info_db(db_conn, ecod_nums_list)
+    else:
+        logger.info(f"Loading weights and scores for {len(ecod_nums_list)} ecod_nums from files")
+        weights_cache: Dict[str, Optional[Dict[int, float]]] = {}
+        info_cache: Dict[str, Optional[Tuple[List[float], List[float]]]] = {}
+        for ecod_num in ecod_nums_list:
+            weights_cache[ecod_num] = load_ecod_weights(data_dir, ecod_num)
+            info_cache[ecod_num] = load_ecod_domain_info(data_dir, ecod_num)
 
     for hitname, zscore, alignments, rot1, rot2, rot3, trans in raw_hits:
         # Extract ECOD number
@@ -227,15 +250,8 @@ def analyze_hits(
 
         ecod_id, family = reference_data.ecod_metadata[ecod_num]
 
-        # Load weights (cached)
-        if ecod_num not in weights_cache:
-            weights_cache[ecod_num] = load_ecod_weights(data_dir, ecod_num)
-        weights = weights_cache[ecod_num]
-
-        # Load domain info (cached)
-        if ecod_num not in info_cache:
-            info_cache[ecod_num] = load_ecod_domain_info(data_dir, ecod_num)
-        domain_info = info_cache[ecod_num]
+        weights = weights_cache.get(ecod_num)
+        domain_info = info_cache.get(ecod_num)
 
         # Calculate scores
         if weights and domain_info:
@@ -398,7 +414,8 @@ def run_step8(
     working_dir: Path,
     reference_data: ReferenceData,
     data_dir: Path,
-    path_resolver=None
+    path_resolver=None,
+    db_conn=None
 ) -> bool:
     """
     Run step 8: Analyze DALI results.
@@ -409,6 +426,7 @@ def run_step8(
         reference_data: ECOD reference data
         data_dir: Path to data directory
         path_resolver: Optional PathResolver for sharded output directories
+        db_conn: Optional psycopg2 connection for DB-backed weight/score loading
 
     Returns:
         True if successful, False otherwise
@@ -439,7 +457,7 @@ def run_step8(
 
     # Analyze hits (calculate scores and percentiles)
     logger.info("Calculating scores and percentiles")
-    analyzed_hits = analyze_hits(raw_hits, reference_data, data_dir)
+    analyzed_hits = analyze_hits(raw_hits, reference_data, data_dir, db_conn=db_conn)
     logger.info(f"Analyzed {len(analyzed_hits)} hits")
 
     # Calculate ranks and ranges
