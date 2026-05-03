@@ -273,7 +273,7 @@ def extract_sequence_from_cif(cif_path: Path, chain_id: str = 'A') -> str:
                 continue
 
             resname = row.str(4)  # mon_id
-            position = row.str(9)  # seq_id
+            position = row.str(8)  # seq_id
 
             # Try direct conversion
             aa = three_to_one(resname)
