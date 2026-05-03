@@ -8,20 +8,19 @@ import glob
 import os
 import re
 
-from dpam.tools.base import ExternalTool
-from dpam.utils.logging_config import get_logger
-
-# DALI alignment line format (from mol*.txt structural equivalences):
+# DALI alignment line format:
 #   "   1: mol1-A mol2-A     2 -  25 <=>    1 -  24   (...)"      3-digit
 #   "   1: mol1-A mol2-A  1014 -1044 <=>    2 -  32   (...)"      4-digit (dash attaches to end)
 #   "   1: mol1-A mol2-A 12345-67890 <=> 12345-67890   (...)"     5-digit (no spaces)
-# Splitting on whitespace is unreliable: DALI's fixed-width formatting eats
-# spaces around the dash once residue indices grow past 999, so a positional
-# parser silently dropped every alignment with 4+ digit residues. Use regex
-# on the raw line to extract the four indices regardless of internal spacing.
+# Splitting on whitespace is unreliable because DALI uses fixed-width formatting
+# that swallows spaces when residue numbers grow. Use regex on the original line
+# to extract the four residue indices regardless of internal spacing.
 _DALI_ALIGN_RE = re.compile(
     r':\s+\S+\s+\S+\s+(\d+)\s*-\s*(\d+)\s+<=>\s+(\d+)\s*-\s*(\d+)'
 )
+
+from dpam.tools.base import ExternalTool
+from dpam.utils.logging_config import get_logger
 
 logger = get_logger('tools.dali')
 
@@ -264,6 +263,459 @@ class DALI(ExternalTool):
             logger.debug("No DALI hits found")
 
         return z_score, alignments, rotation_rows, translation_vals
+
+
+class RustDALI:
+    """
+    Rust-based DALI structural alignment.
+
+    Drop-in replacement for DALI class. Key differences:
+    - No subprocess: calls Rust library directly via PyO3
+    - Alignments use 1-based sequential numbering (same as Fortran .dat convention)
+    - When template .dat file is available, uses it directly (bypasses Rust DSSP,
+      eliminates DSSP divergence vs Fortran dsspcmbi)
+    """
+
+    def __init__(self, dat_dir: Optional[Path] = None):
+        """
+        Args:
+            dat_dir: Optional directory containing pre-computed .dat files.
+                     When set, template .dat files are looked up here before
+                     falling back to PDB import. Use Fortran-generated .dat
+                     files to eliminate DSSP divergence.
+        """
+        self.dat_dir = Path(dat_dir) if dat_dir else None
+
+    def align(
+        self,
+        pdb1: Path,
+        pdb2: Path,
+        output_dir: Path,
+        dat1_dir: Optional[Path] = None,
+        dat2_dir: Optional[Path] = None,
+    ) -> Tuple[Optional[float], List[Tuple[int, int]], List[str], List[str]]:
+        """
+        Run DALI alignment between two structures using Rust backend.
+
+        If a pre-computed .dat file exists for the template (in self.dat_dir
+        or dat2_dir), it is used directly, bypassing Rust DSSP computation.
+
+        Returns same signature as DALI.align():
+            (z_score, alignments, rotation_rows, translation_vals)
+        """
+        try:
+            import dali as dali_rust
+        except ImportError:
+            logger.error("Rust dali module not available")
+            return None, [], [], []
+
+        pdb1_abs = str(Path(pdb1).resolve())
+        pdb2_abs = str(Path(pdb2).resolve())
+
+        # Look for pre-computed .dat file for template (bypasses Rust DSSP)
+        template_dat = None
+        template_stem = Path(pdb2).stem
+        for search_dir in [self.dat_dir, dat2_dir]:
+            if search_dir is not None:
+                candidate = Path(search_dir) / f'{template_stem}.dat'
+                if candidate.exists():
+                    template_dat = str(candidate.resolve())
+                    break
+
+        try:
+            result = dali_rust.align_pdb(
+                pdb1_abs, pdb2_abs,
+                query_chain="", template_chain="",
+                query_code="mol1", template_code="mol2",
+                template_dat=template_dat,
+            )
+        except Exception as e:
+            logger.warning(f"Rust DALI alignment failed: {e}")
+            return None, [], [], []
+
+        if result is None:
+            return None, [], [], []
+
+        # Format rotation rows as tab-separated strings (matches Fortran output)
+        rotation_rows = [
+            '\t'.join(f'{v:.6f}' for v in row) for row in result.rotation
+        ]
+        # Format translation values as strings
+        translation_vals = [f'{v:.6f}' for v in result.translation]
+
+        return result.zscore, result.alignments, rotation_rows, translation_vals
+
+    def iterative_search(
+        self,
+        query_pdb: Path,
+        template_pdb: Path,
+        template_dat_path: Optional[str] = None,
+        min_aligned: int = 20,
+        min_zscore: float = 2.0,
+        gap_tolerance: int = 5,
+        max_rounds: int = 10,
+    ) -> List[Tuple[float, int, int, List[Tuple[int, int]], List[str], List[str]]]:
+        """
+        Run full iterative DALI in Rust (single FFI call for the entire loop).
+
+        Imports query and template into a temporary ProteinStore, runs
+        iterative_search natively in Rust (search → mask → repeat), and
+        maps alignment indices back to PDB residue IDs.
+
+        Args:
+            query_pdb: Path to query PDB file
+            template_pdb: Path to template PDB file
+            template_dat_path: Optional pre-computed .dat file for the template.
+                If None and self.dat_dir is set, looks up by template PDB stem.
+            min_aligned: Minimum aligned residues per hit (default 20)
+            min_zscore: Z-score threshold (default 2.0)
+            gap_tolerance: Gap bridging for masking (default 5)
+            max_rounds: Maximum iteration rounds (default 10)
+
+        Returns:
+            List of (z_score, n_aligned, qlen, alignments, rotation_rows, translation_vals)
+            where alignments are (query_pdb_resid, template_sequential_idx) pairs.
+        """
+        try:
+            import dali as dali_rust
+        except ImportError:
+            logger.error("Rust dali module not available")
+            return []
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = dali_rust.ProteinStore(tmpdir)
+
+            # Import query PDB
+            # Note: import_pdb may append chain to code (e.g. "q" → "qA"),
+            # so we use the returned code for all subsequent operations.
+            try:
+                q = dali_rust.import_pdb(str(Path(query_pdb).resolve()), "", "q")
+                store.add_protein(q)
+                query_code = q.code
+            except Exception as e:
+                logger.warning(f"Failed to import query PDB: {e}")
+                return []
+
+            # Resolve template .dat (check self.dat_dir if not explicitly provided)
+            if template_dat_path is None and self.dat_dir is not None:
+                candidate = self.dat_dir / f'{Path(template_pdb).stem}.dat'
+                if candidate.exists():
+                    template_dat_path = str(candidate.resolve())
+
+            # Import template: prefer .dat if available.
+            # When .dat exists, symlink into store dir — avoids parsing
+            # + rewriting the .dat file on every call.  The ECOD70 library
+            # is invariant across queries, so this is pure overhead.
+            try:
+                if template_dat_path:
+                    template_code = Path(template_dat_path).stem
+                    link_path = os.path.join(tmpdir, f'{template_code}.dat')
+                    os.symlink(os.path.realpath(template_dat_path), link_path)
+                else:
+                    t = dali_rust.import_pdb(
+                        str(Path(template_pdb).resolve()), "", "t"
+                    )
+                    store.add_protein(t)
+                    template_code = t.code
+            except Exception as e:
+                logger.warning(f"Failed to import template: {e}")
+                return []
+
+            # Run iterative search.
+            # skip_wolf=False: WOLF path is robust to DSSP divergence in
+            # PDB-imported queries; PARSI alone fails for Rust-imported
+            # queries due to secondary structure assignment differences.
+            hits = dali_rust.iterative_search(
+                query_code, [template_code], store,
+                min_aligned=min_aligned,
+                min_zscore=min_zscore,
+                gap_tolerance=gap_tolerance,
+                max_rounds=max_rounds,
+                skip_wolf=False,
+            )
+
+            results = []
+            for hit in hits:
+                # Determine which query protein was used this round.
+                # Round 0 uses the original, round N uses "{query_code}_r{N-1}".
+                if hit.round == 0:
+                    q_code = query_code
+                else:
+                    q_code = f"{query_code}_r{hit.round - 1}"
+
+                try:
+                    q_prot = store.get_protein(q_code)
+                except Exception:
+                    break
+
+                qlen = q_prot.nres
+
+                # Map query sequential indices to PDB residue IDs
+                alignments_pdb = []
+                for q_idx, t_idx in hit.alignments:
+                    actual_qresid = q_prot.resid_map[q_idx - 1]
+                    alignments_pdb.append((actual_qresid, t_idx))
+
+                # Format rotation/translation as tab-separated strings
+                rotation_rows = [
+                    '\t'.join(f'{v:.6f}' for v in row) for row in hit.rotation
+                ]
+                translation_vals = [f'{v:.6f}' for v in hit.translation]
+
+                results.append((
+                    hit.zscore,
+                    len(hit.alignments),
+                    qlen,
+                    alignments_pdb,
+                    rotation_rows,
+                    translation_vals,
+                ))
+
+            return results
+
+
+    def batch_search(
+        self,
+        query_pdb: Path,
+        template_codes: List[str],
+        pdb_dir: Optional[Path] = None,
+        min_aligned: int = 20,
+        min_zscore: float = 2.0,
+        gap_tolerance: int = 5,
+        max_rounds: int = 10,
+    ) -> List[Tuple[str, float, int, int, List[Tuple[int, int]], List[str], List[str]]]:
+        """
+        Iterative one-to-many domain detection (single FFI call).
+
+        Searches query against ALL template_codes simultaneously,
+        finding the globally best match per masking round.  Exploits
+        ECOD70 library invariance: template .dat files are resolved
+        once, query is imported once, WOLF grid and PARSI cache are
+        built once.
+
+        Template .dat resolution order for each code:
+          1. self.dat_dir/{code}.dat  (pre-generated, symlinked)
+          2. pdb_dir/{code}.pdb       (auto-generated via Rust import_pdb)
+          3. skipped
+
+        Args:
+            query_pdb: Path to query PDB file
+            template_codes: ECOD70 domain codes
+            pdb_dir: Directory containing template PDB files ({code}.pdb).
+                Used to auto-generate .dat for templates missing from dat_dir.
+            min_aligned: Minimum aligned residues per hit
+            min_zscore: Z-score threshold
+            gap_tolerance: Gap bridging for masking
+            max_rounds: Maximum masking rounds
+
+        Returns:
+            List of (template_code, z_score, n_aligned, qlen,
+                     alignments, rotation_rows, translation_vals)
+            where alignments are (query_pdb_resid, template_1based) pairs.
+        """
+        try:
+            import dali as dali_rust
+        except ImportError:
+            logger.error("Rust dali module not available")
+            return []
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = dali_rust.ProteinStore(tmpdir)
+
+            # Import query PDB
+            try:
+                q = dali_rust.import_pdb(str(Path(query_pdb).resolve()), "", "q")
+                store.add_protein(q)
+                query_code = q.code
+            except Exception as e:
+                logger.warning(f"batch_search: failed to import query: {e}")
+                return []
+
+            # Resolve template .dat files: symlink if pre-computed,
+            # auto-generate from PDB otherwise.
+            # The .dat format truncates codes to 5 chars, so we maintain
+            # a reverse map from truncated internal code → original name.
+            valid_codes = []
+            code_map = {}  # internal_code → original_code
+            n_symlinked = 0
+            n_generated = 0
+            for code in template_codes:
+                # Try pre-computed .dat first
+                if self.dat_dir is not None:
+                    dat_path = self.dat_dir / f'{code}.dat'
+                    if dat_path.exists():
+                        link_path = os.path.join(tmpdir, f'{code}.dat')
+                        try:
+                            os.symlink(os.path.realpath(str(dat_path)), link_path)
+                            valid_codes.append(code)
+                            code_map[code] = code
+                            n_symlinked += 1
+                            continue
+                        except OSError:
+                            pass
+
+                # Fall back to PDB import (code may be truncated to 5 chars)
+                if pdb_dir is not None:
+                    pdb_path = Path(pdb_dir) / f'{code}.pdb'
+                    if pdb_path.exists():
+                        try:
+                            t = dali_rust.import_pdb(str(pdb_path.resolve()), "", code)
+                            store.add_protein(t)
+                            valid_codes.append(t.code)
+                            code_map[t.code] = code  # t.code may be truncated
+                            n_generated += 1
+                            # Write back to dat_dir for future reuse
+                            if self.dat_dir is not None:
+                                cache_path = self.dat_dir / f'{code}.dat'
+                                if not cache_path.exists():
+                                    try:
+                                        dali_rust.write_dat(t, str(cache_path))
+                                    except Exception:
+                                        pass
+                            continue
+                        except Exception as e:
+                            logger.debug(f"batch_search: import failed for {code}: {e}")
+
+                logger.debug(f"batch_search: no .dat or .pdb for {code}, skipping")
+
+            logger.info(
+                f"batch_search: {len(valid_codes)}/{len(template_codes)} templates "
+                f"({n_symlinked} .dat, {n_generated} imported)"
+            )
+
+            if not valid_codes:
+                return []
+
+            # Single iterative search across all templates.
+            # WOLF grid + PARSI cache built once for the query.
+            hits = dali_rust.iterative_search(
+                query_code, valid_codes, store,
+                min_aligned=min_aligned,
+                min_zscore=min_zscore,
+                gap_tolerance=gap_tolerance,
+                max_rounds=max_rounds,
+                skip_wolf=False,
+            )
+
+            results = []
+            for hit in hits:
+                if hit.round == 0:
+                    q_code = query_code
+                else:
+                    q_code = f"{query_code}_r{hit.round - 1}"
+
+                try:
+                    q_prot = store.get_protein(q_code)
+                except Exception:
+                    break
+
+                qlen = q_prot.nres
+
+                alignments_pdb = []
+                for q_idx, t_idx in hit.alignments:
+                    actual_qresid = q_prot.resid_map[q_idx - 1]
+                    alignments_pdb.append((actual_qresid, t_idx))
+
+                rotation_rows = [
+                    '\t'.join(f'{v:.6f}' for v in row) for row in hit.rotation
+                ]
+                translation_vals = [f'{v:.6f}' for v in hit.translation]
+
+                # Restore original code (undo .dat 5-char truncation)
+                original_code = code_map.get(hit.cd2, hit.cd2)
+
+                results.append((
+                    original_code,
+                    hit.zscore,
+                    len(hit.alignments),
+                    qlen,
+                    alignments_pdb,
+                    rotation_rows,
+                    translation_vals,
+                ))
+
+            return results
+
+
+def generate_dat_files(
+    pdb_dir: Path,
+    dat_dir: Path,
+    chain: str = "",
+    use_fortran: bool = False,
+    dali_home: Optional[str] = None,
+) -> int:
+    """
+    Pre-generate .dat files from PDB files.
+
+    Converts all .pdb files in pdb_dir to .dat format, storing results
+    in dat_dir. When use_fortran=True, runs Fortran DaliLite to generate
+    .dat files (guaranteeing Fortran-compatible DSSP). Otherwise uses
+    Rust import_pdb (faster but may have DSSP divergence).
+
+    Args:
+        pdb_dir: Directory containing .pdb files
+        dat_dir: Output directory for .dat files
+        chain: Chain ID to extract (empty string = first chain)
+        use_fortran: If True, use Fortran DaliLite for .dat generation
+        dali_home: Path to DaliLite installation (for Fortran mode)
+
+    Returns:
+        Number of .dat files generated
+    """
+    import subprocess
+
+    dat_dir = Path(dat_dir)
+    dat_dir.mkdir(parents=True, exist_ok=True)
+    pdb_files = sorted(Path(pdb_dir).glob('*.pdb'))
+    count = 0
+
+    for pdb_file in pdb_files:
+        code = pdb_file.stem
+        dat_file = dat_dir / f'{code}.dat'
+        if dat_file.exists():
+            continue
+
+        if use_fortran:
+            # Use Fortran DaliLite import to generate .dat
+            dali_bin = Path(dali_home or find_dali_executable()).parent
+            import_bin = dali_bin / 'import.pl'
+            if not import_bin.exists():
+                logger.warning(f"Fortran import.pl not found at {import_bin}")
+                continue
+            try:
+                tmp = dat_dir / f'.tmp_{code}'
+                tmp.mkdir(exist_ok=True)
+                subprocess.run(
+                    [str(import_bin), '--pdbfile', str(pdb_file.resolve()),
+                     '--dat', str(tmp)],
+                    cwd=str(tmp), capture_output=True, timeout=30
+                )
+                # import.pl writes mol1A.dat or similar — find and rename
+                generated = list(tmp.glob('*.dat'))
+                if generated:
+                    import shutil
+                    shutil.copy(str(generated[0]), str(dat_file))
+                    count += 1
+                import shutil
+                shutil.rmtree(tmp, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"Fortran import failed for {code}: {e}")
+        else:
+            # Use Rust import
+            try:
+                import dali as dali_rust
+                protein = dali_rust.import_pdb(str(pdb_file.resolve()), chain, code)
+                protein.write_dat(str(dat_file))
+                count += 1
+            except Exception as e:
+                logger.warning(f"Rust import failed for {code}: {e}")
+
+    logger.info(f"Generated {count} .dat files in {dat_dir}")
+    return count
 
 
 def run_iterative_dali(

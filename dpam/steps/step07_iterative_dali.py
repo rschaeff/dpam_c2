@@ -24,7 +24,7 @@ import shutil
 import time
 import os
 
-from dpam.tools.dali import DALI
+from dpam.tools.dali import DALI, RustDALI
 from dpam.utils.logging_config import get_logger
 
 logger = get_logger('steps.iterative_dali')
@@ -84,24 +84,31 @@ def run_dali(args: Tuple) -> bool:
               or (prefix, edomain, working_dir, data_dir, template_cache)
               or (prefix, edomain, working_dir, data_dir, template_cache, scratch_base)
               or (prefix, edomain, working_dir, data_dir, template_cache, scratch_base, query_pdb_dir)
+              or (prefix, edomain, working_dir, data_dir, template_cache, scratch_base, query_pdb_dir, template_dat_dir)
 
     Returns:
         True if any hits found
     """
-    if len(args) == 7:
+    if len(args) == 8:
+        prefix, edomain, working_dir, data_dir, template_cache, scratch_base, query_pdb_dir, template_dat_dir = args
+    elif len(args) == 7:
         prefix, edomain, working_dir, data_dir, template_cache, scratch_base, query_pdb_dir = args
+        template_dat_dir = None
     elif len(args) == 6:
         prefix, edomain, working_dir, data_dir, template_cache, scratch_base = args
         query_pdb_dir = working_dir  # backward compat
+        template_dat_dir = None
     elif len(args) == 5:
         prefix, edomain, working_dir, data_dir, template_cache = args
         scratch_base = None
         query_pdb_dir = working_dir  # backward compat
+        template_dat_dir = None
     else:
         prefix, edomain, working_dir, data_dir = args
         template_cache = None
         scratch_base = None
         query_pdb_dir = working_dir  # backward compat
+        template_dat_dir = None
 
     # Setup paths - use absolute paths to avoid directory confusion
     query_pdb = (Path(query_pdb_dir) / f'{prefix}.pdb').resolve()
@@ -166,12 +173,65 @@ def run_dali(args: Tuple) -> bool:
     # Output file for this domain
     output_file = iterative_dir / f'{prefix}_{edomain}_hits'
     
-    # Initialize DALI tool
-    dali = DALI()
+    # Initialize DALI tool — backend selection via env var (default: fortran)
+    backend = os.environ.get('DPAM_DALI_BACKEND', 'fortran')
+    if backend == 'rust':
+        dali = RustDALI(dat_dir=template_dat_dir)
+    elif backend == 'auto':
+        try:
+            import dali as _dali_check  # noqa: F401
+            dali = RustDALI(dat_dir=template_dat_dir)
+        except ImportError:
+            dali = DALI()
+    else:  # fortran (default)
+        dali = DALI()
+    backend_name = 'rust' if isinstance(dali, RustDALI) else 'fortran'
+    logger.debug(f"{edomain}: using {backend_name} DALI backend")
     
     # Track alignment count
     alicount = 0
-    
+
+    # --- Rust native iterative search (replaces the per-iteration loop) ---
+    if isinstance(dali, RustDALI):
+        try:
+            # Look up template .dat
+            template_dat_path = None
+            if template_dat_dir:
+                candidate = Path(template_dat_dir) / f'{edomain}.dat'
+                if candidate.exists():
+                    template_dat_path = str(candidate.resolve())
+
+            results = dali.iterative_search(
+                work_pdb,
+                template_pdb,
+                template_dat_path=template_dat_path,
+            )
+
+            for z_score, match, qlen, alignments, rotation_rows, translation_vals in results:
+                alicount += 1
+                with open(output_file, 'a') as f:
+                    f.write(f'>{edomain}_{alicount}\t{z_score}\t{match}\t{qlen}\t0\n')
+                    for rot_row in rotation_rows:
+                        f.write(f'rotation\t{rot_row}\n')
+                    if translation_vals:
+                        f.write('translation\t' + '\t'.join(translation_vals) + '\n')
+                    for qresid, tind in alignments:
+                        f.write(f'{qresid}\t{tind}\n')
+
+                logger.debug(f"{edomain}_{alicount}: z={z_score:.2f}, n={match}, q_len={qlen}")
+
+        except Exception as e:
+            logger.error(f"{edomain}: Rust iterative search failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        finally:
+            time.sleep(0.1)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        return alicount > 0
+
+    # --- Fortran pairwise loop (unchanged) ---
     # Iterative DALI loop - EXACTLY matches v1.0
     try:
         while True:
@@ -214,7 +274,6 @@ def run_dali(args: Tuple) -> bool:
                 if translation_vals:
                     f.write('translation\t' + '\t'.join(translation_vals) + '\n')
                 for qind, tind in alignments:
-                    # Convert alignment index (1-based) to actual residue ID
                     actual_qresid = Qresids[qind - 1]
                     f.write(f'{actual_qresid}\t{tind}\n')
 
@@ -286,7 +345,8 @@ def run_step7(
     template_cache: Path = None,
     scratch_dir: Path = None,
     dali_workers: int = None,
-    path_resolver=None
+    path_resolver=None,
+    template_dat_dir: Path = None
 ) -> bool:
     """
     Run Step 7: Iterative DALI alignment.
@@ -309,6 +369,11 @@ def run_step7(
         dali_workers: Number of DALI worker processes. Defaults to cpus.
             DALI is I/O-bound; try 4x CPUs when using local scratch.
         path_resolver: Optional PathResolver for sharded output directories
+        template_dat_dir: Optional directory containing pre-computed .dat files
+            for ECOD70 templates. When provided and the Rust backend is active,
+            templates are loaded from .dat files (bypassing Rust DSSP) to
+            eliminate secondary structure divergence vs Fortran dsspcmbi.
+            Generate with: dali.import_pdb() + dali.write_dat() or Fortran DaliLite.
 
     Returns:
         True if successful
@@ -377,26 +442,70 @@ def run_step7(
             f"{pool_size} workers (cpus={cpus})"
         )
 
-        # Prepare arguments for parallel processing
-        # 7-tuple: (prefix, edomain, step7_dir, data_dir, template_cache, scratch_base, step1_dir)
-        # Workers use step7_dir for iterative output, step1_dir for query PDB lookup
-        if scratch_base:
-            inputs = [
-                (prefix, edomain, step7_dir, data_dir, template_cache, scratch_base, step1_dir)
-                for edomain in edomains
-            ]
+        # --- Rust batch search: one call for ALL templates ---
+        # Exploits ECOD70 invariance: template .dat files in dat_dir
+        # are symlinked once, query imported once, WOLF grid + PARSI
+        # cache built once.  Replaces 200 independent Pool workers.
+        backend = os.environ.get('DPAM_DALI_BACKEND', 'fortran')
+        if backend in ('rust', 'auto'):
+            try:
+                import dali as _dali_check  # noqa: F401
+                use_batch = True
+            except ImportError:
+                use_batch = (backend == 'rust')  # fail below if forced
         else:
+            use_batch = False
+
+        if use_batch:
+            logger.info("Using Rust batch search (ECOD70-invariant)")
+            query_pdb = step1_dir / f'{prefix}.pdb'
+            if not query_pdb.exists():
+                logger.error(f"Query PDB not found: {query_pdb}")
+                return False
+
+            dali = RustDALI(dat_dir=template_dat_dir)
+            ecod70_pdb_dir = data_dir / 'ECOD70'
+            batch_results = dali.batch_search(
+                query_pdb, edomains,
+                pdb_dir=ecod70_pdb_dir,
+                min_aligned=20, min_zscore=2.0,
+                gap_tolerance=5, max_rounds=len(edomains),
+            )
+
+            # Write hits in the same format as per-template workers
+            alicount = 0
+            for (cd2, z_score, n_aligned, qlen,
+                 alignments, rotation_rows, translation_vals) in batch_results:
+                alicount += 1
+                output_file = iterative_dir / f'{prefix}_{cd2}_hits'
+                with open(output_file, 'a') as f:
+                    f.write(f'>{cd2}_{alicount}\t{z_score}\t{n_aligned}\t{qlen}\t0\n')
+                    for rot_row in rotation_rows:
+                        f.write(f'rotation\t{rot_row}\n')
+                    if translation_vals:
+                        f.write('translation\t' + '\t'.join(translation_vals) + '\n')
+                    for qresid, tind in alignments:
+                        f.write(f'{qresid}\t{tind}\n')
+
+                logger.debug(f"{cd2}_{alicount}: z={z_score:.2f}, n={n_aligned}, q_len={qlen}")
+
+            n_success = alicount
+            logger.info(f"Batch search found {n_success} hits across {len(edomains)} templates")
+
+        else:
+            # --- Per-template parallel processing (Fortran or fallback) ---
+            tdd = str(template_dat_dir) if template_dat_dir else None
             inputs = [
-                (prefix, edomain, step7_dir, data_dir, template_cache, None, step1_dir)
+                (prefix, edomain, step7_dir, data_dir, template_cache,
+                 scratch_base if scratch_base else None, step1_dir, tdd)
                 for edomain in edomains
             ]
 
-        # Run in parallel (match v1.0 multiprocessing pattern)
-        with Pool(processes=pool_size) as pool:
-            results = pool.map(run_dali, inputs)
+            with Pool(processes=pool_size) as pool:
+                results = pool.map(run_dali, inputs)
 
-        n_success = sum(1 for r in results if r)
-        logger.info(f"Completed DALI for {n_success}/{len(edomains)} domains")
+            n_success = sum(1 for r in results if r)
+            logger.info(f"Completed DALI for {n_success}/{len(edomains)} domains")
 
         # Concatenate all hits files
         final_file = step7_dir / f'{prefix}_iterativdDali_hits'
