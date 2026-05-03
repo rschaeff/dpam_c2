@@ -101,11 +101,21 @@ def run_step23(
     predictions_file = resolver.step_dir(16) / f"{prefix}.step16_predictions"
     mappings_file = resolver.step_dir(18) / f"{prefix}.step18_mappings"
 
-    # Check inputs
-    for required_file in [domains_file, predictions_file, mappings_file]:
-        if not required_file.exists():
-            logger.error(f"Required file not found: {required_file}")
-            return False
+    # Check inputs - if no domains were parsed (step13) or no confident
+    # predictions were found (step17→step18 produces no mappings file),
+    # there's nothing to classify. Upstream steps return True with no
+    # output in these cases, so we do the same.
+    if not domains_file.exists():
+        logger.info(f"No parsed domains for {prefix}, skipping predictions")
+        return True
+
+    if not mappings_file.exists():
+        logger.info(f"No template mappings for {prefix} (no confident predictions), skipping")
+        return True
+
+    if not predictions_file.exists():
+        logger.error(f"Required file not found: {predictions_file}")
+        return False
 
     # Reference data
     tgroup_length_file = data_dir / "tgroup_length"
