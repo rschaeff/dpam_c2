@@ -21,6 +21,9 @@ setup(
     author='DPAM Development Team',
     python_requires='>=3.8',
     packages=find_packages(),
+    package_data={
+        'dpam': ['tools/scripts/*.pm'],
+    },
     install_requires=[
         'numpy>=1.20.0',
         'gemmi>=0.6.0',

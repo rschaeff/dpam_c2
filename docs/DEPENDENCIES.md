@@ -28,6 +28,53 @@ module load hh-suite
 **Citation:**
 Steinegger M, Meier M, Mirdita M, Vöhringer H, Haunsberger SJ, and Söding J (2019) HH-suite3 for fast remote homology detection and deep protein annotation.
 
+#### Custom HHPaths.pm Configuration
+
+**IMPORTANT:** The default system `HHPaths.pm` does not work correctly with DPAM. DPAM includes a custom `HHPaths.pm` that must be used for profile generation.
+
+**Location:** `dpam/tools/scripts/HHPaths.pm`
+
+**Why this is needed:**
+- The `addss.pl` script (for adding secondary structure to MSAs) requires `HHPaths.pm` to locate PSIPRED and other tools
+- The system `HHPaths.pm` has hardcoded paths that don't match our installation
+- Our custom version uses conda environment paths and falls back gracefully when PSIPRED is unavailable
+
+**How it works:**
+1. The `AddSS` wrapper in `dpam/tools/hhsuite.py` sets `HHLIB` to `dpam/tools/`
+2. This causes `addss.pl` to find our custom `HHPaths.pm` in `dpam/tools/scripts/`
+3. The custom `HHPaths.pm` reads `CONDA_PREFIX` to locate PSIPRED binaries
+
+**Current configuration in `dpam/tools/scripts/HHPaths.pm`:**
+```perl
+# PSIPRED paths (from conda if available)
+our $execdir = $conda_prefix ? "$conda_prefix/bin" : "/usr/bin";
+our $datadir = $conda_prefix ? "$conda_prefix/share/psipred/data" : "/dev/null";
+
+# HH-suite paths (hardcoded to system installation)
+my $hhsuite_system = "/sw/apps/hh-suite";
+our $hhlib    = $hhsuite_system;
+our $hhdata   = $hhsuite_system."/data";
+our $hhbin    = $hhsuite_system."/bin";
+```
+
+**To customize for a different installation:**
+
+1. Edit `dpam/tools/scripts/HHPaths.pm`
+2. Update `$hhsuite_system` to your HH-suite installation path
+3. If PSIPRED is not in conda, update `$execdir` and `$datadir` paths
+
+**Profile generation pipeline:**
+```
+hhblits (MSA) → addss.pl (secondary structure) → hhmake (HMM) → hhsearch (search)
+                    ↑
+            Uses custom HHPaths.pm
+```
+
+**Skipping PSIPRED:** If PSIPRED is not available, use `--skip-addss` flag:
+```bash
+dpam run AF-P12345 --working-dir ./work --data-dir /path/to/data --skip-addss
+```
+
 ---
 
 ### 2. Foldseek (v10.941cd33)
