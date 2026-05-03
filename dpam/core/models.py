@@ -69,9 +69,15 @@ class PAEMatrix:
     @classmethod
     def from_json(cls, json_data: dict) -> 'PAEMatrix':
         """Parse PAE from AlphaFold JSON output"""
-        # Handle two formats
+        # Handle three formats: AF2, AF3, and legacy
         if 'predicted_aligned_error' in json_data:
+            # AlphaFold 2 format
             pae_list = json_data['predicted_aligned_error']
+            matrix = np.array(pae_list)
+            length = len(matrix)
+        elif 'pae' in json_data:
+            # AlphaFold 3 format
+            pae_list = json_data['pae']
             matrix = np.array(pae_list)
             length = len(matrix)
         elif 'distance' in json_data:
