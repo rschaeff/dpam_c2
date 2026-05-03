@@ -236,10 +236,14 @@ def run_hhsearch_pipeline(
     if output_prefix is None:
         output_prefix = fasta_file.with_suffix('')
 
-    a3m_file = output_prefix.with_suffix('.a3m')
-    a3m_ss_file = output_prefix.with_suffix('.a3m.ss')
-    hmm_file = output_prefix.with_suffix('.hmm')
-    hhsearch_file = output_prefix.with_suffix('.hhsearch')
+    # Use string concatenation instead of with_suffix() to handle prefixes
+    # containing dots (e.g., ENA_MTMD02000002_MTMD02000002.1_534).
+    # Path.with_suffix() treats the part after the last dot as a suffix,
+    # so ".1_534" gets replaced instead of appended.
+    a3m_file = Path(str(output_prefix) + '.a3m')
+    a3m_ss_file = Path(str(output_prefix) + '.a3m.ss')
+    hmm_file = Path(str(output_prefix) + '.hmm')
+    hhsearch_file = Path(str(output_prefix) + '.hhsearch')
 
     # Determine database paths
     if uniref_db is None and database_dir is not None:
