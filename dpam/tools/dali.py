@@ -6,9 +6,22 @@ from pathlib import Path
 from typing import Optional, List, Tuple, Set
 import glob
 import os
+import re
 
 from dpam.tools.base import ExternalTool
 from dpam.utils.logging_config import get_logger
+
+# DALI alignment line format (from mol*.txt structural equivalences):
+#   "   1: mol1-A mol2-A     2 -  25 <=>    1 -  24   (...)"      3-digit
+#   "   1: mol1-A mol2-A  1014 -1044 <=>    2 -  32   (...)"      4-digit (dash attaches to end)
+#   "   1: mol1-A mol2-A 12345-67890 <=> 12345-67890   (...)"     5-digit (no spaces)
+# Splitting on whitespace is unreliable: DALI's fixed-width formatting eats
+# spaces around the dash once residue indices grow past 999, so a positional
+# parser silently dropped every alignment with 4+ digit residues. Use regex
+# on the raw line to extract the four indices regardless of internal spacing.
+_DALI_ALIGN_RE = re.compile(
+    r':\s+\S+\s+\S+\s+(\d+)\s*-\s*(\d+)\s+<=>\s+(\d+)\s*-\s*(\d+)'
+)
 
 logger = get_logger('tools.dali')
 
@@ -204,34 +217,21 @@ class DALI(ExternalTool):
                     # Second hit - stop parsing (matches v1.0 behavior)
                     getit = False
 
-            # Parse structural equivalences
-            # Format: "   1: mol1-A mol2-A     2 -  25 <=>    1 -  24  ..."
-            # Words: [0]1: [1]mol1-A [2]mol2-A [3]2 [4]- [5]25 [6]<=> [7]1 [8]- [9]24
-            elif len(words) >= 10 and words[0].endswith(':') and '<=>' in line:
-                try:
-                    # Extract ranges
-                    arrow_idx = words.index('<=>')
-
-                    # Query range: words[3] and words[5]
-                    q_start = int(words[3])
-                    q_end = int(words[5])
-
-                    # Template range: words[arrow_idx+1] and words[arrow_idx+3]
-                    t_start = int(words[arrow_idx + 1])
-                    t_end = int(words[arrow_idx + 3])
-
-                    # Add all aligned pairs in this segment
+            # Parse structural equivalences. See _DALI_ALIGN_RE comment for why
+            # token-position parsing is unreliable here.
+            elif len(words) >= 4 and words[0].endswith(':') and '<=>' in line:
+                m = _DALI_ALIGN_RE.search(line)
+                if m:
+                    q_start, q_end, t_start, t_end = (int(g) for g in m.groups())
                     q_len = q_end - q_start + 1
                     t_len = t_end - t_start + 1
-
                     if q_len == t_len:
                         for i in range(q_len):
                             alignments.append((q_start + i, t_start + i))
                     else:
                         logger.warning(f"Unequal segment lengths: q={q_len}, t={t_len}")
-                except (ValueError, IndexError) as e:
-                    logger.debug(f"Could not parse alignment segment: {line.strip()} - {e}")
-                    pass
+                else:
+                    logger.debug(f"Could not parse alignment segment: {line.strip()}")
 
             # Parse rotation/translation matrix
             # Format: -matrix  "mol1-A mol2-A  U(1,.)  rot1 rot2 rot3  trans"

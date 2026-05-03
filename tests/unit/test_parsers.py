@@ -6,11 +6,13 @@ Tests parsing of external tool outputs (HHsearch, Foldseek, DALI, DSSP).
 
 import pytest
 from pathlib import Path
+from unittest.mock import patch
 from dpam.io.parsers import (
     parse_hhsearch_output,
     parse_foldseek_output,
     parse_dssp_output
 )
+from dpam.tools.dali import DALI, _DALI_ALIGN_RE
 
 
 @pytest.mark.unit
@@ -240,3 +242,175 @@ class TestParserEdgeCases:
 
         assert hits[0].query_start == 1000
         assert hits[0].query_end == 2000
+
+
+@pytest.mark.unit
+class TestDALIAlignmentRegex:
+    """
+    Direct regex tests for DALI alignment lines.
+
+    Regression coverage for the 4-digit residue parsing bug: DaliLite's
+    fixed-width formatting eats spaces around the dash when residue indices
+    grow past 999 (e.g. ``1014 -1044`` instead of ``1014 - 1044``).
+    """
+
+    @pytest.mark.parametrize("line,expected", [
+        # 3-digit: 5 tokens between mol2-A and <=>
+        (
+            "   1: mol1-A mol2-A     2 -  25 <=>    1 -  24   "
+            "(ALA   2  - LEU  25  <=> ALA   1  - LEU  24 )",
+            (2, 25, 1, 24),
+        ),
+        # 4-digit query, 2-digit template — INSR D10 vs PKinase template
+        (
+            "   1: mol1-A mol2-A  1014 -1044 <=>    2 -  32   "
+            "(ASP 1014  - ASP 1044  <=> ASP   12  - GLY   42 )",
+            (1014, 1044, 2, 32),
+        ),
+        # Mixed: 4-digit query, 3-digit template
+        (
+            "   1: mol1-A mol2-A  1198 -1294 <=>  165 - 261",
+            (1198, 1294, 165, 261),
+        ),
+        # 5-digit: dash with no spaces at all on either side
+        (
+            "   1: mol1-A mol2-A 12345-67890 <=> 12345-67890",
+            (12345, 67890, 12345, 67890),
+        ),
+        # 4-digit on both sides
+        (
+            "   2: mol1-A mol2-A  1014 -1044 <=>  2014 -2044",
+            (1014, 1044, 2014, 2044),
+        ),
+    ])
+    def test_residue_widths(self, line, expected):
+        m = _DALI_ALIGN_RE.search(line)
+        assert m is not None, f"regex failed to match: {line!r}"
+        assert tuple(int(g) for g in m.groups()) == expected
+
+    def test_header_line_does_not_match(self):
+        """Z-score summary line must not be parsed as an alignment segment."""
+        header = "   1:  mol2-A 29.4  2.4  248   274   41"
+        assert _DALI_ALIGN_RE.search(header) is None
+
+    def test_matrix_line_does_not_match(self):
+        """Translation/rotation matrix line must not be parsed as alignment."""
+        matrix = ('-matrix  "mol1-A mol2-A  U(1,.)   '
+                  '0.838773 -0.413254  0.354514          -22.411917"')
+        assert _DALI_ALIGN_RE.search(matrix) is None
+
+
+@pytest.mark.unit
+class TestDALIParseOutput:
+    """
+    End-to-end tests for DALI._parse_dali_output against synthetic mol*.txt
+    files. Covers the file-level contract: which fields are returned, when
+    None is returned, and that the matrix block is parsed independently of
+    the alignment block.
+    """
+
+    def _dali_obj(self):
+        # Bypass executable-availability check; we only exercise the parser.
+        with patch.object(DALI, '__init__', lambda self: None):
+            d = DALI()
+        return d
+
+    def _write(self, output_dir: Path, content: str):
+        (output_dir / "mol1A.txt").write_text(content)
+
+    def test_parses_3digit_alignment(self, tmp_path):
+        content = (
+            "# Job: test\n"
+            "# Query: mol1A\n"
+            "# No:  Chain   Z    rmsd lali nres  %id\n"
+            "   1:  mol2-A  6.2  4.7  24    50   13\n"
+            "\n"
+            "# Structural equivalences\n"
+            "   1: mol1-A mol2-A     2 -  25 <=>    1 -  24\n"
+            "\n"
+            "# Translation-rotation matrices\n"
+            '-matrix  "mol1-A mol2-A  U(1,.)   1.0 0.0 0.0          0.0"\n'
+            '-matrix  "mol1-A mol2-A  U(2,.)   0.0 1.0 0.0          0.0"\n'
+            '-matrix  "mol1-A mol2-A  U(3,.)   0.0 0.0 1.0          0.0"\n'
+        )
+        self._write(tmp_path, content)
+        z, alignments, rot, trans = self._dali_obj()._parse_dali_output(tmp_path)
+        assert z == 6.2
+        assert len(alignments) == 24
+        assert alignments[0] == (2, 1)
+        assert alignments[-1] == (25, 24)
+        assert len(rot) == 3
+        assert len(trans) == 3
+
+    def test_parses_4digit_alignment_regression(self, tmp_path):
+        """
+        INSR D10 (kinase) regression: query residues 1014-1294 against an
+        ECOD PKinase template. With the old token-position parser, every
+        alignment segment silently raised ValueError and ``alignments`` came
+        back empty — step 7 then dropped the hit and the kinase domain was
+        lost from the final output.
+        """
+        content = (
+            "# Job: test\n"
+            "# Query: mol1A\n"
+            "# No:  Chain   Z    rmsd lali nres  %id\n"
+            "   1:  mol2-A 29.4  2.4  248   274   41\n"
+            "\n"
+            "# Structural equivalences\n"
+            "   1: mol1-A mol2-A  1014 -1044 <=>    2 -  32\n"
+            "   1: mol1-A mol2-A  1051 -1063 <=>   33 -  45\n"
+            "   1: mol1-A mol2-A  1198 -1294 <=>  165 - 261\n"
+            "\n"
+            "# Translation-rotation matrices\n"
+            '-matrix  "mol1-A mol2-A  U(1,.)   0.838773 -0.413254  0.354514          -22.411917"\n'
+            '-matrix  "mol1-A mol2-A  U(2,.)  -0.428382 -0.098983  0.898160            9.990059"\n'
+            '-matrix  "mol1-A mol2-A  U(3,.)  -0.336077 -0.905220 -0.260055          -17.584805"\n'
+        )
+        self._write(tmp_path, content)
+        z, alignments, rot, trans = self._dali_obj()._parse_dali_output(tmp_path)
+
+        assert z == 29.4
+        # 31 + 13 + 97 = 141 residues across the three segments
+        assert len(alignments) == 31 + 13 + 97
+        # Segment boundaries
+        assert (1014, 2) in alignments
+        assert (1044, 32) in alignments
+        assert (1294, 261) in alignments
+        # n_aligned must clear step-7's ≥20-residue gate
+        assert len(alignments) >= 20
+
+        assert rot == [
+            "0.838773\t-0.413254\t0.354514",
+            "-0.428382\t-0.098983\t0.898160",
+            "-0.336077\t-0.905220\t-0.260055",
+        ]
+        assert trans == ["-22.411917", "9.990059", "-17.584805"]
+
+    def test_only_first_hit_parsed(self, tmp_path):
+        """v1.0 behavior: stop parsing at the second hit summary line."""
+        content = (
+            "   1:  mol2-A  6.2  4.7  24    50   13\n"
+            "   1: mol1-A mol2-A     2 -  25 <=>    1 -  24\n"
+            "   2:  mol3-A  5.0  5.5  20    50   10\n"
+            "   2: mol1-A mol3-A    50 -  70 <=>   10 -  30\n"
+        )
+        self._write(tmp_path, content)
+        z, alignments, _, _ = self._dali_obj()._parse_dali_output(tmp_path)
+        assert z == 6.2
+        # Alignments from hit #2 must not appear
+        for q, t in alignments:
+            assert q <= 25
+
+    def test_no_mol_files_returns_none(self, tmp_path):
+        z, alignments, rot, trans = self._dali_obj()._parse_dali_output(tmp_path)
+        assert z is None
+        assert alignments == []
+        assert rot == []
+        assert trans == []
+
+    def test_no_hits_in_mol_file(self, tmp_path):
+        """File present but contains no parseable hit (DALI ran but found nothing)."""
+        self._write(tmp_path, "# Job: test\n# Query: mol1A\n")
+        z, alignments, rot, trans = self._dali_obj()._parse_dali_output(tmp_path)
+        assert z is None
+        assert alignments == []
