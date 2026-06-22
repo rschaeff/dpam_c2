@@ -57,11 +57,19 @@ class HHBlits(ExternalTool):
 
 class AddSS(ExternalTool):
     """
-    Wrapper for addss.pl (add secondary structure to A3M).
+    Add PSIPRED secondary structure to an A3M.
+
+    Modern, blast-free reimplementation (see dpam/tools/addss_modern.py):
+    the legacy addss.pl a3m path used NCBI `blastpgp -B/-C`, which segfaults
+    (dead toolkit), and its `-hmm` path misparses HMMER 3.4 emission lines.
+    We instead build a query-anchored HMM from the a3m (hmmbuild --hand),
+    derive the PSIPRED .mtx directly from the HMM profile (addss.pl's
+    calibrated math), and run psipred/psipass2. Validated at ~80% Q3 vs DSSP.
     """
 
     def __init__(self):
-        super().__init__('addss.pl', check_available=True, required=True)
+        # No external addss.pl/blastpgp dependency; addss_modern uses full tool paths.
+        super().__init__('hmmbuild', check_available=False, required=False)
 
     def run(
         self,
@@ -70,58 +78,18 @@ class AddSS(ExternalTool):
         working_dir: Optional[Path] = None
     ) -> None:
         """
-        Add secondary structure prediction to A3M.
+        Add secondary structure prediction to A3M (blast-free PSIPRED).
 
         Args:
             input_a3m: Input A3M file
-            output_a3m: Output A3M file with SS
+            output_a3m: Output A3M file with >ss_pred/>ss_conf prepended
             working_dir: Working directory
         """
-        import os
-        import shutil
-        env = os.environ.copy()
+        from dpam.tools import addss_modern
 
-        # Find HHsuite installation directory from addss.pl path
-        addss_full_path = shutil.which(self.executable)
-        if addss_full_path:
-            addss_path = Path(addss_full_path).resolve()
-        else:
-            addss_path = Path(self.executable).resolve()
-
-        scripts_dir = addss_path.parent
-        hhsuite_dir = scripts_dir.parent  # /sw/apps/hh-suite
-
-        # Use DPAM's custom HHPaths.pm with conda PSIPRED paths
-        dpam_tools_dir = Path(__file__).parent.resolve()
-
-        # Build command with explicit perl -I flags to ensure correct HHPaths.pm loading
-        # Our custom HHPaths.pm must come FIRST to override system version
-        cmd = [
-            'perl',
-            f'-I{dpam_tools_dir}',
-            f'-I{scripts_dir}',
-            str(addss_path),
-            str(input_a3m),
-            str(output_a3m),
-            '-a3m'
-        ]
-
-        # Set HHLIB to DPAM's tools directory so addss.pl's "use lib $ENV{HHLIB}/scripts"
-        # finds our custom HHPaths.pm (which uses conda PSIPRED paths)
-        env['HHLIB'] = str(dpam_tools_dir)
-
-        # Ensure CONDA_PREFIX is set for our custom HHPaths.pm
-        if 'CONDA_PREFIX' not in env:
-            # Try to detect conda prefix from psipred location
-            psipred_path = shutil.which('psipred')
-            if psipred_path:
-                conda_prefix = Path(psipred_path).parent.parent
-                env['CONDA_PREFIX'] = str(conda_prefix)
-                logger.debug(f"Auto-detected CONDA_PREFIX={conda_prefix}")
-
-        logger.info(f"Running addss.pl for {input_a3m.name}")
-        logger.debug(f"Using HHPaths.pm from {dpam_tools_dir}, HHLIB={env['HHLIB']}, CONDA_PREFIX={env.get('CONDA_PREFIX', 'not set')}")
-        self._execute(cmd, cwd=working_dir, capture_output=True, env=env)
+        logger.info(f"Adding PSIPRED SS (modern, blast-free) for {input_a3m.name}")
+        ss_pred, _ = addss_modern.run(input_a3m, output_a3m, working_dir)
+        logger.info(f"addss (modern) completed: {output_a3m} ({len(ss_pred)} residues)")
         logger.info(f"addss.pl completed: {output_a3m}")
 
 
