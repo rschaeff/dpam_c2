@@ -177,3 +177,35 @@ of `merge_segments_by_probability`, unrelated to this change.)
 Full-scale acceptance still pending: re-run the 1,553 resplit proteins and re-apply
 `analysis/tier_a_run/qc_gate.py`. Expected FRAGMENT 11.9% -> ~3% (the residual 122 carry
 confident-but-dissimilar H/T and are correctly left for curation, not auto-merged).
+
+---
+
+## OUTCOME: fix REVERTED 2026-07-24 — the guard approach has a hard ceiling
+
+The step19 adjacency merge (PR #2) and a follow-on step22 H-group / size-anchor guard were tested on
+419 chimera proteins (whole-protein acceptance, `analysis/v295_1_rerun/`). Result:
+- fragment rate 14.8% -> 7.8% (never near 0), AND
+- **it INTRODUCED real over-merges** the original pipeline did not make: a genuine domain absorbed into
+  an adjacent domain of a DIFFERENT fold. Best case (full size-anchor guard) still left **5/419 cross-X
+  over-merges**.
+
+**Root cause — a circular dependency (proven on AF-Q6FJL1):**
+`is_fragment(len, T-group)` depends on the T-group assignment, which is itself unreliable for exactly
+the ambiguous pieces the merge must decide on. Q6FJL1 D1 (45aa) hits BOTH 145.1.1 (prob 0.90, where 45aa
+is a real domain) AND 207.1.1 (prob 0.96, where 45aa is a fragment). The fragment verdict — and thus
+whether D1 is absorbed into the neighbouring LRR — flips depending on which ambiguous hit you believe.
+No guard built on the T-group signal can resolve this; that is why the guards kept accumulating without
+closing (bridge -> H-group guard -> size anchor -> ...).
+
+**Decision (RS):** revert step19 + step22 to the original merge (the fragment tail is cosmetic — 25aa
+slivers a curator ignores; the over-merges are real classification errors). `addss-modern-blastfree`
+(PR #1) is KEPT. This doc + `ECOD_tgroup_sizes.reference` are kept as the record.
+
+**The real fix (separate project): decide domain-hood from STRUCTURE, not from the circular ECOD
+assignment.** A piece is a domain iff it folds as an independent unit (PAE/contact-based cohesion),
+independent of what T-group it maps to. That breaks the circularity the guard approach cannot.
+
+### v295.1 consequence
+Do NOT use fixed-dpam_c2 boundaries. Adopt the ORIGINAL finalDPAM boundaries with the fold-aware
+`qc_gate.py` as an ADOPTION-TIME filter (don't promote sub-floor slivers to F-group reps; merge nothing),
+which never over-merges a real domain. See `analysis/dpam_v5_strategy/V295_1_PLAN.md`.
