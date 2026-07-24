@@ -35,6 +35,98 @@ from ..utils.ranges import parse_range
 
 logger = logging.getLogger(__name__)
 
+# --- Gated adjacency merge (fragment absorption) -----------------------------------------
+# Template-sharing alone cannot rescue an orphan fragment: a domain with NO ECOD hit is
+# invisible to the template pass, so a fragment embedded inside such a domain is never even
+# proposed (see MERGE_FRAGMENT_DEFICIENCY.md). We add adjacency-based candidates, but GATED,
+# so we do not re-introduce the dissimilar-H/T merging the adjacency rule was forgone to avoid.
+#
+# A pair is proposed by adjacency ONLY if ALL hold:
+#   1. one side is a FRAGMENT: shorter than any curated ECOD domain of its own T-group AND
+#      < 0.5x that fold's median (or below ABS_MIN_DOMAIN). Full-size domains are never
+#      absorbable; small-but-real domains (e.g. Zn-fingers, whose T-group min is ~29) are not
+#      fragments and are therefore protected.
+#   2. H/T COMPATIBLE: same H-group, or one side has no confident assignment. Two confidently
+#      assigned domains of DIFFERENT H-groups are never proposed.
+#   3. within ADJ_GAP_MAX residues, or embedded inside the acceptor's sequence span.
+# step21's connectivity test still validates every proposed pair.
+
+ABS_MIN_DOMAIN = 30      # no curated ECOD domain is smaller than this
+ADJ_GAP_MAX = 50         # residues; fragment must sit this close to its acceptor
+MIN_CURATED_N = 3        # need >=3 curated examples to trust a T-group's floor
+
+
+def h_group(tgroup: str) -> str:
+    """H-group (X.H) of a T-group id (X.H.T)."""
+    return ".".join(tgroup.split(".")[:2]) if tgroup else ""
+
+
+def load_tgroup_sizes(data_dir: Path) -> Dict[str, dict]:
+    """Curated ECOD domain-size stats per T-group: t_id, n, min_len, p05, median."""
+    sizes: Dict[str, dict] = {}
+    f = data_dir / "ECOD_tgroup_sizes"
+    if not f.exists():
+        logger.warning(f"ECOD_tgroup_sizes not found in {data_dir}; "
+                       "adjacency merge falls back to the absolute size floor only")
+        return sizes
+    with open(f, 'r') as fh:
+        for line in fh:
+            p = line.strip().split('\t')
+            if len(p) < 5:
+                continue
+            try:
+                sizes[p[0]] = dict(n=int(p[1]), min=float(p[2]),
+                                   p05=float(p[3]), med=float(p[4]))
+            except ValueError:
+                continue
+    logger.debug(f"Loaded curated size profiles for {len(sizes)} T-groups")
+    return sizes
+
+
+def is_fragment(length: int, tgroup: str, tg_sizes: Dict[str, dict]) -> bool:
+    """Fold-aware fragment test (gate condition 1)."""
+    if length < ABS_MIN_DOMAIN:
+        return True
+    c = tg_sizes.get(tgroup)
+    if not tgroup or c is None or c["n"] < MIN_CURATED_N:
+        return False          # cannot fold-calibrate -> not a fragment (absolute floor only)
+    return length < c["min"] and length < 0.5 * c["med"]
+
+
+def ht_compatible(tg_a: str, tg_b: str) -> bool:
+    """Gate condition 2: same H-group, or at least one side unassigned."""
+    if not tg_a or not tg_b:
+        return True
+    return h_group(tg_a) == h_group(tg_b)
+
+
+def is_adjacent(resids_a: Set[int], resids_b: Set[int]) -> bool:
+    """Gate condition 3: embedded in the acceptor's span, or within ADJ_GAP_MAX residues."""
+    if not resids_a or not resids_b:
+        return False
+    lo_a, hi_a = min(resids_a), max(resids_a)
+    lo_b, hi_b = min(resids_b), max(resids_b)
+    # embedded: the fragment lies inside the acceptor's sequence span (e.g. fills a gap in it)
+    if lo_b <= lo_a and hi_a <= hi_b:
+        return True
+    gap = min(abs(a - b) for a in (lo_a, hi_a) for b in (lo_b, hi_b))
+    return gap <= ADJ_GAP_MAX
+
+
+def load_all_domains(domains_file: Path) -> Dict[str, str]:
+    """ALL step13 domains, including those with NO ECOD hit (invisible to the template pass)."""
+    out: Dict[str, str] = {}
+    if not domains_file.exists():
+        return out
+    with open(domains_file, 'r') as f:
+        for line in f:
+            if line.startswith('#'):
+                continue
+            parts = line.strip().split('\t')
+            if len(parts) >= 2:
+                out[parts[0]] = parts[1]
+    return out
+
 
 def load_position_weights(
     ecod_id: str,
@@ -118,6 +210,13 @@ def run_step19(
     if not ecod_length_file.exists():
         logger.error(f"ECOD length file not found: {ecod_length_file}")
         return False
+
+    # ALL step13 domains — including those with NO ECOD hit. The template pass below only ever
+    # sees domains present in step18_mappings, so an ECOD-hitless domain is invisible to it and
+    # a fragment embedded inside such a domain can never be proposed. The adjacency pass needs
+    # the full domain set.
+    all_domains = load_all_domains(resolver.step_dir(13) / f"{prefix}.step13_domains")
+    tg_sizes = load_tgroup_sizes(data_dir)
 
     # Load ECOD lengths
     ecod_lengths = {}
@@ -303,6 +402,59 @@ def run_step19(
 
             validated_merges.append(f"{domain1}\t{range1}\t{domain2}\t{range2}")
             merge_info.append(f"{domain1},{domain2}\t{','.join(supporting_ecods)}")
+
+    # ---------------------------------------------------------------------------------
+    # GATED ADJACENCY PASS — rescue orphan fragments the template pass cannot see.
+    # Gates: (1) fold-aware fragment size, (2) H/T compatibility, (3) adjacency/embedding.
+    # step21 still validates connectivity for every pair proposed here.
+    # ---------------------------------------------------------------------------------
+    # Best (highest-prob) T-group per domain; domains with no ECOD hit stay unassigned ("").
+    domain_to_tgroup: Dict[str, str] = {}
+    for domain, hits in domain_to_hits.items():
+        best = max(hits, key=lambda h: h['prob'])
+        domain_to_tgroup[domain] = best['tgroup'] or ""
+
+    domain_resids = {d: set(parse_range(r)) for d, r in all_domains.items()}
+    existing_pairs = {tuple(sorted(m.split('\t')[0::2])) for m in validated_merges}
+
+    n_adj = 0
+    for frag, frag_res in domain_resids.items():
+        frag_len = len(frag_res)
+        frag_tg = domain_to_tgroup.get(frag, "")
+
+        # Gate 1: only a fragment (below its own fold's curated floor) may be absorbed.
+        if not is_fragment(frag_len, frag_tg, tg_sizes):
+            continue
+
+        for acc, acc_res in domain_resids.items():
+            if acc == frag:
+                continue
+            acc_tg = domain_to_tgroup.get(acc, "")
+
+            # Never absorb a fragment into another fragment.
+            if is_fragment(len(acc_res), acc_tg, tg_sizes):
+                continue
+            # Gate 2: H/T compatibility — this is the safeguard the template rule provided.
+            if not ht_compatible(frag_tg, acc_tg):
+                continue
+            # Gate 3: adjacency / embedding.
+            if not is_adjacent(frag_res, acc_res):
+                continue
+
+            pair = tuple(sorted([frag, acc]))
+            if pair in existing_pairs:
+                continue
+            existing_pairs.add(pair)
+
+            validated_merges.append(
+                f"{frag}\t{all_domains[frag]}\t{acc}\t{all_domains[acc]}"
+            )
+            merge_info.append(f"{frag},{acc}\tADJACENCY(frag={frag_len}aa,"
+                              f"tg={frag_tg or 'NA'}->{acc_tg or 'NA'})")
+            n_adj += 1
+
+    if n_adj:
+        logger.info(f"Step 19: {n_adj} additional merge candidates from gated adjacency pass")
 
     # Write results
     output_file = resolver.step_dir(19) / f"{prefix}.step19_merge_candidates"
