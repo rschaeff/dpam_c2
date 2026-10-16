@@ -387,16 +387,23 @@ class RustDALI:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = dali_rust.ProteinStore(tmpdir)
 
-            # Import query PDB
+            # iterative_search_pdb (dali_cl >= 2026-10-16) re-imports the masked
+            # query PDB every round and masks with get_domain_range, as the
+            # Fortran path below does; older builds only have the protein-level
+            # iterative_search.
+            fortran_semantics = hasattr(dali_rust, "iterative_search_pdb")
+
+            # Import query PDB (legacy path only)
             # Note: import_pdb may append chain to code (e.g. "q" → "qA"),
             # so we use the returned code for all subsequent operations.
-            try:
-                q = dali_rust.import_pdb(str(Path(query_pdb).resolve()), "", "q")
-                store.add_protein(q)
-                query_code = q.code
-            except Exception as e:
-                logger.warning(f"Failed to import query PDB: {e}")
-                return []
+            if not fortran_semantics:
+                try:
+                    q = dali_rust.import_pdb(str(Path(query_pdb).resolve()), "", "q")
+                    store.add_protein(q)
+                    query_code = q.code
+                except Exception as e:
+                    logger.warning(f"Failed to import query PDB: {e}")
+                    return []
 
             # Resolve template .dat (check self.dat_dir if not explicitly provided)
             if template_dat_path is None and self.dat_dir is not None:
@@ -423,10 +430,31 @@ class RustDALI:
                 logger.warning(f"Failed to import template: {e}")
                 return []
 
-            # Run iterative search.
-            # skip_wolf=False: WOLF path is robust to DSSP divergence in
-            # PDB-imported queries; PARSI alone fails for Rust-imported
-            # queries due to secondary structure assignment differences.
+            if fortran_semantics:
+                try:
+                    hits = dali_rust.iterative_search_pdb(
+                        str(Path(query_pdb).resolve()), [template_code], store,
+                        code="q",
+                        min_aligned=min_aligned,
+                        min_zscore=min_zscore,
+                    )
+                except Exception as e:
+                    logger.warning(f"Rust iterative_search_pdb failed: {e}")
+                    return []
+                rotation_fmt = lambda h: ['\t'.join(f'{v:.6f}' for v in row) for row in h.rotation]
+                return [
+                    (
+                        hit.zscore,
+                        len(hit.alignments),
+                        hit.qlen,
+                        [(qr, t) for qr, (_, t) in zip(hit.query_resids, hit.alignments)],
+                        rotation_fmt(hit),
+                        [f'{v:.6f}' for v in hit.translation],
+                    )
+                    for hit in hits
+                ]
+
+            # Legacy: protein-level masking (approximate).
             hits = dali_rust.iterative_search(
                 query_code, [template_code], store,
                 min_aligned=min_aligned,
