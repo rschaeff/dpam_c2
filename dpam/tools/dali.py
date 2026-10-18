@@ -441,18 +441,25 @@ class RustDALI:
                 except Exception as e:
                     logger.warning(f"Rust iterative_search_pdb failed: {e}")
                     return []
-                rotation_fmt = lambda h: ['\t'.join(f'{v:.6f}' for v in row) for row in h.rotation]
-                return [
-                    (
-                        hit.zscore,
+                # Report what the Fortran path reports: Z as DaliLite prints
+                # it (one decimal; downstream thresholds/ranks see the same
+                # value) and the inverse superposition (R^T, -R^T t), i.e.
+                # the direction parsed from DaliLite's output.
+                results = []
+                for hit in hits:
+                    rot = hit.rotation
+                    rot_t = [[rot[j][i] for j in range(3)] for i in range(3)]
+                    trans = [-sum(rot_t[i][j] * hit.translation[j] for j in range(3))
+                             for i in range(3)]
+                    results.append((
+                        float(f'{hit.zscore:.1f}'),
                         len(hit.alignments),
                         hit.qlen,
                         [(qr, t) for qr, (_, t) in zip(hit.query_resids, hit.alignments)],
-                        rotation_fmt(hit),
-                        [f'{v:.6f}' for v in hit.translation],
-                    )
-                    for hit in hits
-                ]
+                        ['\t'.join(f'{v:.6f}' for v in row) for row in rot_t],
+                        [f'{v:.6f}' for v in trans],
+                    ))
+                return results
 
             # Legacy: protein-level masking (approximate).
             hits = dali_rust.iterative_search(
