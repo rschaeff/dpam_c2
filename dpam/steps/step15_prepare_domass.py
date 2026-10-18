@@ -427,8 +427,12 @@ def run_step15(
                     if ecod not in dali_overlaps or hit['zscore'] > dali_overlaps[ecod]['zscore']:
                         dali_overlaps[ecod] = hit
 
-            # Generate features for ECODs found by BOTH methods
-            both_ecods = set(hh_overlaps.keys()) & set(dali_overlaps.keys())
+            # Generate features for ECODs found by BOTH methods.
+            # Iterate dicts (hit order), not sets: str hashing is randomized
+            # per process, so set order changed the row order between runs
+            # and with it downstream tie-breaks between equal-probability
+            # predictions.
+            both_ecods = [e for e in hh_overlaps if e in dali_overlaps]
 
             for ecod in both_ecods:
                 if ecod not in ecod_to_tgroup:
@@ -473,7 +477,7 @@ def run_step15(
                 feature_count += 1
 
             # Handle HHsearch-only hits
-            hh_only = set(hh_overlaps.keys()) - set(dali_overlaps.keys())
+            hh_only = [e for e in hh_overlaps if e not in dali_overlaps]
             for ecod in hh_only:
                 if ecod not in ecod_to_tgroup:
                     continue
@@ -491,7 +495,7 @@ def run_step15(
                 feature_count += 1
 
             # Handle DALI-only hits
-            dali_only = set(dali_overlaps.keys()) - set(hh_overlaps.keys())
+            dali_only = [e for e in dali_overlaps if e not in hh_overlaps]
             for ecod in dali_only:
                 if ecod not in ecod_to_tgroup:
                     continue
