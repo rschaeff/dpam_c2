@@ -7,6 +7,7 @@ from typing import Optional, List, Tuple, Set
 import glob
 import os
 import re
+import sys
 
 # DALI alignment line format:
 #   "   1: mol1-A mol2-A     2 -  25 <=>    1 -  24   (...)"      3-digit
@@ -285,6 +286,16 @@ class RustDALI:
                      files to eliminate DSSP divergence.
         """
         self.dat_dir = Path(dat_dir) if dat_dir else None
+        try:
+            import dali as dali_rust
+        except ImportError as e:
+            # Raise rather than return empty results: an empty hit list is
+            # indistinguishable from "no alignment" and step 7 would be
+            # marked done with nothing in it.
+            raise ImportError(
+                f"Rust dali module not importable by {sys.executable}: {e}"
+            ) from e
+        self._dali = dali_rust
 
     def align(
         self,
@@ -303,11 +314,7 @@ class RustDALI:
         Returns same signature as DALI.align():
             (z_score, alignments, rotation_rows, translation_vals)
         """
-        try:
-            import dali as dali_rust
-        except ImportError:
-            logger.error("Rust dali module not available")
-            return None, [], [], []
+        dali_rust = self._dali
 
         pdb1_abs = str(Path(pdb1).resolve())
         pdb2_abs = str(Path(pdb2).resolve())
@@ -376,11 +383,7 @@ class RustDALI:
             List of (z_score, n_aligned, qlen, alignments, rotation_rows, translation_vals)
             where alignments are (query_pdb_resid, template_sequential_idx) pairs.
         """
-        try:
-            import dali as dali_rust
-        except ImportError:
-            logger.error("Rust dali module not available")
-            return []
+        dali_rust = self._dali
 
         import tempfile
 
@@ -550,11 +553,7 @@ class RustDALI:
                      alignments, rotation_rows, translation_vals)
             where alignments are (query_pdb_resid, template_1based) pairs.
         """
-        try:
-            import dali as dali_rust
-        except ImportError:
-            logger.error("Rust dali module not available")
-            return []
+        dali_rust = self._dali
 
         import tempfile
 
