@@ -8,7 +8,7 @@ This script reads each v1.0 step script and identifies:
 - File naming conventions
 
 Usage:
-    python analyze_v1_steps.py v1_scripts/ > v1_file_mapping.txt
+    python analyze_v1_steps.py reference/v1_scripts/ > v1_file_mapping.txt
 """
 
 import re

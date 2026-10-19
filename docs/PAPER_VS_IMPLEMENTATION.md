@@ -321,5 +321,5 @@ The differences between the paper and V1 likely reflect:
 ## References
 
 - Zhang J, Schaeffer RD, Durham J, Cong Q, Grishin NV. DPAM: A domain parser for AlphaFold models. Protein Science. 2023;32(2):e4548.
-- V1 Legacy Code: `v1_scripts/` directory
+- V1 Legacy Code: `reference/v1_scripts/` directory
 - V2 Implementation: `dpam/steps/` directory

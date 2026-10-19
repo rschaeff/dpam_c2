@@ -179,3 +179,11 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+# DPAM run data: keep out of the repo root. Validation sets, containers images
+# and scratch runs live in ../dpam_c2_data (see DPAM_VALIDATION_DIR in tests/conftest.py).
+/validation_*/
+/test_*/
+/step[0-9]*/
+*.sif
+*.tar.gz
+/*.log

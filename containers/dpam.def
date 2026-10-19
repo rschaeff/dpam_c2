@@ -1,0 +1,222 @@
+Bootstrap: docker
+From: continuumio/miniconda3:latest
+
+%labels
+    Author DPAM Development Team
+    Version 2.0.0
+    Description DPAM v2.0 - Domain Parser for AlphaFold Models
+    URL https://github.com/rschaeff/dpam
+
+%help
+    DPAM v2.0 - Domain Parser for AlphaFold Models
+
+    This container bundles all external dependencies:
+      - HHsuite (hhmake, hhsearch, addss.pl)
+      - Foldseek
+      - DaliLite.v5 (dali.pl, dsspcmbi)
+      - PSIPRED (for addss.pl secondary structure prediction)
+      - TensorFlow CPU (DOMASS ML model)
+      - Python 3.11 + numpy + gemmi
+
+    Usage:
+      apptainer exec --cleanenv \
+        --bind /path/to/ecod_data:/data \
+        --bind /path/to/working_dir:/work \
+        --bind /tmp:/tmp \
+        dpam.sif \
+        dpam batch-run proteins.txt \
+          --working-dir /work \
+          --data-dir /data \
+          --cpus 128 \
+          --scratch-dir /tmp \
+          --dali-workers 64 \
+          --skip-addss \
+          --resume
+
+    Note: UniRef30 is NOT included. HHblits profiles (a3m files) must be
+    pre-computed input. The container includes hhmake, hhsearch, and
+    addss.pl+PSIPRED for downstream HH-suite steps.
+
+%environment
+    export DALI_HOME=/opt/dali
+    export CONDA_PREFIX=/opt/conda/envs/dpam
+    export PATH=/opt/conda/envs/dpam/bin:/opt/conda/envs/dpam/scripts:/opt/dali/bin:$PATH
+    export OMP_PROC_BIND=false
+    export HHLIB=/opt/conda/envs/dpam
+
+%post
+    # ----------------------------------------------------------------
+    # 1. System packages
+    # ----------------------------------------------------------------
+    # libgfortran5: runtime library for DaliLite Fortran binaries (puu, fssp, etc.)
+    # perl: required by dali.pl
+    apt-get update && apt-get install -y --no-install-recommends \
+        libgfortran5 \
+        perl \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    # ----------------------------------------------------------------
+    # 2. Create conda environment with bioconda tools
+    # ----------------------------------------------------------------
+    conda config --add channels defaults
+    conda config --add channels bioconda
+    conda config --add channels conda-forge
+    conda config --set channel_priority flexible
+
+    conda create -y -n dpam \
+        python=3.11 \
+        numpy>=1.20 \
+        pip \
+        hhsuite \
+        foldseek \
+        psipred
+
+    # Activate environment for subsequent commands
+    export PATH=/opt/conda/envs/dpam/bin:$PATH
+    export CONDA_PREFIX=/opt/conda/envs/dpam
+
+    # ----------------------------------------------------------------
+    # 3. Install DaliLite.v5 from pre-built binaries
+    # ----------------------------------------------------------------
+    # DaliLite.v5 was copied in by %files from the local leda build.
+    # The web-hosted tarball (ekhidna2.biocenter.helsinki.fi) has a newer
+    # version whose puu binary produces broken DAT files, so we use the
+    # known-good local build instead.
+    mkdir -p /opt/dali/bin
+    cd /opt/dpam/dali_bin
+
+    # Install Perl scripts, modules, and compiled binaries
+    cp -a *.pl /opt/dali/bin/
+    cp -a *.pm /opt/dali/bin/
+    cp -a dsspcmbi serialcompare pipe puu puutos fssp /opt/dali/bin/
+    cp -a filter95fitz selfdccp pipedccp /opt/dali/bin/
+    # .mod files needed by Fortran binaries at runtime
+    cp -a *.mod /opt/dali/bin/ 2>/dev/null || true
+    chmod +x /opt/dali/bin/*.pl /opt/dali/bin/dsspcmbi /opt/dali/bin/puu \
+             /opt/dali/bin/puutos /opt/dali/bin/fssp /opt/dali/bin/serialcompare \
+             /opt/dali/bin/pipe /opt/dali/bin/filter95fitz /opt/dali/bin/selfdccp \
+             /opt/dali/bin/pipedccp
+
+    # Verify
+    test -x /opt/dali/bin/dali.pl || { echo "ERROR: dali.pl not found"; exit 1; }
+    test -x /opt/dali/bin/dsspcmbi || { echo "ERROR: dsspcmbi not found"; exit 1; }
+    test -x /opt/dali/bin/puu || { echo "ERROR: puu not found"; exit 1; }
+
+    # Clean up staging directory
+    cd /
+    rm -rf /opt/dpam/dali_bin
+
+    # ----------------------------------------------------------------
+    # 4. Install Python packages (TensorFlow CPU, gemmi, DPAM)
+    # ----------------------------------------------------------------
+    # Pin TF to 2.15.x — last version with Keras 2 (tf.compat.v1.layers.dense).
+    # TF 2.16+ ships Keras 3 which removed tf.compat.v1.layers, breaking DOMASS.
+    /opt/conda/envs/dpam/bin/pip install --no-cache-dir \
+        "tensorflow-cpu>=2.15,<2.16" \
+        "gemmi>=0.6.0"
+
+    # ----------------------------------------------------------------
+    # 5. Install DPAM package
+    # ----------------------------------------------------------------
+    # Source was already copied in by %files section.
+    # pip install creates the 'dpam' CLI entry point.
+
+    /opt/conda/envs/dpam/bin/pip install --no-cache-dir /opt/dpam
+
+    # ----------------------------------------------------------------
+    # 6. Install container-specific HHPaths.pm
+    # ----------------------------------------------------------------
+    # DPAM's addss.pl wrapper loads HHPaths.pm from dpam/tools/scripts/
+    # via Path(__file__).parent in hhsuite.py. After pip install, that's
+    # in site-packages. Find it and overwrite with container version.
+    SITE_HHPATHS=$(/opt/conda/envs/dpam/bin/python3 -c \
+        "from pathlib import Path; import dpam.tools; print(Path(dpam.tools.__file__).parent / 'scripts' / 'HHPaths.pm')")
+    if [ -f "$SITE_HHPATHS" ]; then
+        cp /opt/dpam/containers/HHPaths.pm "$SITE_HHPATHS"
+        echo "Installed container HHPaths.pm to $SITE_HHPATHS"
+    else
+        echo "WARNING: HHPaths.pm not found at $SITE_HHPATHS"
+        # Create directory and copy anyway
+        mkdir -p "$(dirname "$SITE_HHPATHS")"
+        cp /opt/dpam/containers/HHPaths.pm "$SITE_HHPATHS"
+        echo "Created $SITE_HHPATHS"
+    fi
+
+    # Also copy to hhsuite scripts dir if it exists (belt-and-suspenders)
+    HHSCRIPTS=/opt/conda/envs/dpam/scripts
+    if [ -d "$HHSCRIPTS" ]; then
+        cp /opt/dpam/containers/HHPaths.pm "$HHSCRIPTS/HHPaths.pm"
+    fi
+
+    # ----------------------------------------------------------------
+    # 7. Cleanup to reduce image size
+    # ----------------------------------------------------------------
+    # Verify libgfortran.so.5 is present and findable (needed by DALI binaries)
+    ldconfig
+    test -f /usr/lib/x86_64-linux-gnu/libgfortran.so.5 || { echo "ERROR: libgfortran.so.5 missing"; exit 1; }
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+    conda clean -afy
+    /opt/conda/envs/dpam/bin/pip cache purge 2>/dev/null || true
+    rm -rf /root/.cache/pip
+
+%files
+    # Copy DPAM source tree into the container.
+    # Run 'apptainer build' from the repo root directory.
+    # Only copy files needed for pip install + HHPaths.pm.
+    dpam /opt/dpam/dpam
+    setup.py /opt/dpam/setup.py
+    README.md /opt/dpam/README.md
+    containers/HHPaths.pm /opt/dpam/containers/HHPaths.pm
+    # DaliLite.v5 pre-built binaries from leda (known-good version).
+    # The web download produces binaries with broken puu output.
+    /home/rschaeff/src/Dali_v5/DaliLite.v5/bin /opt/dpam/dali_bin
+
+%runscript
+    export PATH=/opt/conda/envs/dpam/bin:/opt/conda/envs/dpam/scripts:/opt/dali/bin:$PATH
+    export DALI_HOME=/opt/dali
+    export CONDA_PREFIX=/opt/conda/envs/dpam
+    export OMP_PROC_BIND=false
+    export HHLIB=/opt/conda/envs/dpam
+    exec dpam "$@"
+
+%test
+    # Verify all external tools are available
+    echo "=== Testing tool availability ==="
+
+    echo -n "hhsearch: "
+    hhsearch 2>&1 | head -1 || echo "MISSING"
+
+    echo -n "hhmake: "
+    hhmake 2>&1 | head -1 || echo "MISSING"
+
+    echo -n "foldseek: "
+    foldseek version 2>&1 || echo "MISSING"
+
+    echo -n "dali.pl: "
+    test -x /opt/dali/bin/dali.pl && echo "OK" || echo "MISSING"
+
+    echo -n "dsspcmbi: "
+    test -x /opt/dali/bin/dsspcmbi && echo "OK" || echo "MISSING"
+
+    echo -n "libgfortran.so.5: "
+    ldconfig -p 2>/dev/null | grep -q libgfortran.so.5 && echo "OK" || echo "MISSING"
+
+    echo -n "DALI Fortran binaries: "
+    /opt/dali/bin/puu 2>&1 | head -1 | grep -q "error" && echo "FAIL (library issue)" || echo "OK"
+
+    echo -n "DALI Perl scripts: "
+    test -f /opt/dali/bin/sortdccp.pl && test -f /opt/dali/bin/htmljs.pl && echo "OK" || echo "MISSING"
+
+    echo "=== Testing Python packages ==="
+    /opt/conda/envs/dpam/bin/python3 -c "
+import numpy; print(f'numpy: {numpy.__version__}')
+import gemmi; print(f'gemmi: {gemmi.__version__}')
+import tensorflow; print(f'tensorflow: {tensorflow.__version__}')
+"
+
+    echo "=== Testing DPAM CLI ==="
+    /opt/conda/envs/dpam/bin/dpam --help | head -5
+
+    echo "=== All tests passed ==="

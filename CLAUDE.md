@@ -195,6 +195,13 @@ rm -rf "/tmp/slurm-$SLURM_JOB_ID" 2>/dev/null || true
 
 5. **Missing packages**: System Python lacks gemmi, tensorflow, etc. Must use Anaconda or virtualenv with packages installed.
 
+## Repository Layout Conventions
+
+- Keep the repo root clean: no run outputs, scratch scripts or data. Validation sets, v1 outputs, container images and other run data live in `../dpam_c2_data/` (tests find it via `DPAM_VALIDATION_DIR`, defaulting there).
+- Deficiency/issue write-ups go in `docs/deficiencies/`; superseded notes in `docs/archive/`.
+- `reference/v1_scripts/` holds the original DPAM v1.0 scripts, the oracle for v1-parity questions.
+- Never hardcode DB credentials: `get_db_connection()` uses `DPAM_DB_PASSWORD` or libpq's `~/.pgpass`.
+
 ## Architecture
 
 ### Module Structure
