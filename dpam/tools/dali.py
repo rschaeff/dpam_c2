@@ -266,6 +266,28 @@ class DALI(ExternalTool):
         return z_score, alignments, rotation_rows, translation_vals
 
 
+def _fortran_report(
+    zscore: float,
+    rotation: List[List[float]],
+    translation: List[float],
+) -> Tuple[float, List[str], List[str]]:
+    """
+    Convert a dali_cl result to what the Fortran path reports.
+
+    Z as DaliLite prints it (one decimal), so downstream thresholds and
+    ranks see the same value, and the inverse superposition (R^T, -R^T t):
+    dali_cl's (R, t) maps the other way from the one DaliLite prints.
+    """
+    rot_t = [[rotation[j][i] for j in range(3)] for i in range(3)]
+    trans = [-sum(rot_t[i][j] * translation[j] for j in range(3))
+             for i in range(3)]
+    return (
+        float(f'{zscore:.1f}'),
+        ['\t'.join(f'{v:.6f}' for v in row) for row in rot_t],
+        [f'{v:.6f}' for v in trans],
+    )
+
+
 class RustDALI:
     """
     Rust-based DALI structural alignment.
@@ -343,14 +365,10 @@ class RustDALI:
         if result is None:
             return None, [], [], []
 
-        # Format rotation rows as tab-separated strings (matches Fortran output)
-        rotation_rows = [
-            '\t'.join(f'{v:.6f}' for v in row) for row in result.rotation
-        ]
-        # Format translation values as strings
-        translation_vals = [f'{v:.6f}' for v in result.translation]
-
-        return result.zscore, result.alignments, rotation_rows, translation_vals
+        zscore, rotation_rows, translation_vals = _fortran_report(
+            result.zscore, result.rotation, result.translation
+        )
+        return zscore, result.alignments, rotation_rows, translation_vals
 
     def iterative_search(
         self,
@@ -400,13 +418,9 @@ class RustDALI:
             # Note: import_pdb may append chain to code (e.g. "q" → "qA"),
             # so we use the returned code for all subsequent operations.
             if not fortran_semantics:
-                try:
-                    q = dali_rust.import_pdb(str(Path(query_pdb).resolve()), "", "q")
-                    store.add_protein(q)
-                    query_code = q.code
-                except Exception as e:
-                    logger.warning(f"Failed to import query PDB: {e}")
-                    return []
+                q = dali_rust.import_pdb(str(Path(query_pdb).resolve()), "", "q")
+                store.add_protein(q)
+                query_code = q.code
 
             # Resolve template .dat (check self.dat_dir if not explicitly provided)
             if template_dat_path is None and self.dat_dir is not None:
@@ -418,49 +432,36 @@ class RustDALI:
             # When .dat exists, symlink into store dir — avoids parsing
             # + rewriting the .dat file on every call.  The ECOD70 library
             # is invariant across queries, so this is pure overhead.
-            try:
-                if template_dat_path:
-                    template_code = Path(template_dat_path).stem
-                    link_path = os.path.join(tmpdir, f'{template_code}.dat')
-                    os.symlink(os.path.realpath(template_dat_path), link_path)
-                else:
-                    t = dali_rust.import_pdb(
-                        str(Path(template_pdb).resolve()), "", "t"
-                    )
-                    store.add_protein(t)
-                    template_code = t.code
-            except Exception as e:
-                logger.warning(f"Failed to import template: {e}")
-                return []
+            if template_dat_path:
+                template_code = Path(template_dat_path).stem
+                link_path = os.path.join(tmpdir, f'{template_code}.dat')
+                os.symlink(os.path.realpath(template_dat_path), link_path)
+            else:
+                t = dali_rust.import_pdb(
+                    str(Path(template_pdb).resolve()), "", "t"
+                )
+                store.add_protein(t)
+                template_code = t.code
 
             if fortran_semantics:
-                try:
-                    hits = dali_rust.iterative_search_pdb(
-                        str(Path(query_pdb).resolve()), [template_code], store,
-                        code="q",
-                        min_aligned=min_aligned,
-                        min_zscore=min_zscore,
-                    )
-                except Exception as e:
-                    logger.warning(f"Rust iterative_search_pdb failed: {e}")
-                    return []
-                # Report what the Fortran path reports: Z as DaliLite prints
-                # it (one decimal; downstream thresholds/ranks see the same
-                # value) and the inverse superposition (R^T, -R^T t), i.e.
-                # the direction parsed from DaliLite's output.
+                hits = dali_rust.iterative_search_pdb(
+                    str(Path(query_pdb).resolve()), [template_code], store,
+                    code="q",
+                    min_aligned=min_aligned,
+                    min_zscore=min_zscore,
+                )
                 results = []
                 for hit in hits:
-                    rot = hit.rotation
-                    rot_t = [[rot[j][i] for j in range(3)] for i in range(3)]
-                    trans = [-sum(rot_t[i][j] * hit.translation[j] for j in range(3))
-                             for i in range(3)]
+                    zscore, rotation_rows, translation_vals = _fortran_report(
+                        hit.zscore, hit.rotation, hit.translation
+                    )
                     results.append((
-                        float(f'{hit.zscore:.1f}'),
+                        zscore,
                         len(hit.alignments),
                         hit.qlen,
                         [(qr, t) for qr, (_, t) in zip(hit.query_resids, hit.alignments)],
-                        ['\t'.join(f'{v:.6f}' for v in row) for row in rot_t],
-                        [f'{v:.6f}' for v in trans],
+                        rotation_rows,
+                        translation_vals,
                     ))
                 return results
 
@@ -496,14 +497,12 @@ class RustDALI:
                     actual_qresid = q_prot.resid_map[q_idx - 1]
                     alignments_pdb.append((actual_qresid, t_idx))
 
-                # Format rotation/translation as tab-separated strings
-                rotation_rows = [
-                    '\t'.join(f'{v:.6f}' for v in row) for row in hit.rotation
-                ]
-                translation_vals = [f'{v:.6f}' for v in hit.translation]
+                zscore, rotation_rows, translation_vals = _fortran_report(
+                    hit.zscore, hit.rotation, hit.translation
+                )
 
                 results.append((
-                    hit.zscore,
+                    zscore,
                     len(hit.alignments),
                     qlen,
                     alignments_pdb,
@@ -561,13 +560,9 @@ class RustDALI:
             store = dali_rust.ProteinStore(tmpdir)
 
             # Import query PDB
-            try:
-                q = dali_rust.import_pdb(str(Path(query_pdb).resolve()), "", "q")
-                store.add_protein(q)
-                query_code = q.code
-            except Exception as e:
-                logger.warning(f"batch_search: failed to import query: {e}")
-                return []
+            q = dali_rust.import_pdb(str(Path(query_pdb).resolve()), "", "q")
+            store.add_protein(q)
+            query_code = q.code
 
             # Resolve template .dat files: symlink if pre-computed,
             # auto-generate from PDB otherwise.
@@ -654,17 +649,16 @@ class RustDALI:
                     actual_qresid = q_prot.resid_map[q_idx - 1]
                     alignments_pdb.append((actual_qresid, t_idx))
 
-                rotation_rows = [
-                    '\t'.join(f'{v:.6f}' for v in row) for row in hit.rotation
-                ]
-                translation_vals = [f'{v:.6f}' for v in hit.translation]
+                zscore, rotation_rows, translation_vals = _fortran_report(
+                    hit.zscore, hit.rotation, hit.translation
+                )
 
                 # Restore original code (undo .dat 5-char truncation)
                 original_code = code_map.get(hit.cd2, hit.cd2)
 
                 results.append((
                     original_code,
-                    hit.zscore,
+                    zscore,
                     len(hit.alignments),
                     qlen,
                     alignments_pdb,
