@@ -24,29 +24,18 @@ from dpam.tools.foldseek import Foldseek
 
 
 @pytest.fixture
-def test_structure(validation_data_root):
+def test_structure(test_data_dir):
     """
     Provide path to a test structure file.
 
-    Foldseek requires PDB format, so prefer PDB files over CIF.
+    Foldseek requires PDB format. Use the tracked fixture: it has ECOD hits,
+    whereas the smallest validation PDB (52 residues) has none and left the
+    output-not-empty assertions failing.
     """
-    # Try to find PDB files from validation or test data
-    test_dirs = [
-        validation_data_root / 'validation_1000_run',  # PDB files from step 1
-        validation_data_root / 'validation_misc' / 'working',
-        validation_data_root / 'validation_run',
-    ]
-
-    for test_dir in test_dirs:
-        if test_dir.exists():
-            # Prefer PDB files (foldseek requirement)
-            pdb_files = list(test_dir.glob('*.pdb'))
-            if pdb_files:
-                # Use smallest file for faster tests
-                smallest = min(pdb_files, key=lambda p: p.stat().st_size)
-                return smallest
-
-    pytest.skip("No test PDB structure file available")
+    pdb = test_data_dir / 'test_structure.pdb'
+    if not pdb.exists():
+        pytest.skip("No test PDB structure file available")
+    return pdb
 
 
 @pytest.fixture

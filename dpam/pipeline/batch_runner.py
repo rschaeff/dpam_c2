@@ -188,6 +188,13 @@ class BatchRunner:
 
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
+        # Detect the layout here, with the batch's resume flag: the pipeline
+        # below always gets resume=False, and would then pick sharded even
+        # when resuming a flat working directory.
+        if sharded is None:
+            sharded = (PathResolver.detect_layout(self.working_dir)
+                       if resume else True)
+
         # Create pipeline for step dispatch (loads reference data once)
         self.pipeline = DPAMPipeline(
             working_dir=self.working_dir,
