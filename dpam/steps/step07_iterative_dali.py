@@ -446,8 +446,13 @@ def run_step7(
         # Exploits ECOD70 invariance: template .dat files in dat_dir
         # are symlinked once, query imported once, WOLF grid + PARSI
         # cache built once.  Replaces 200 independent Pool workers.
+        # Opt-in only (DPAM_DALI_RUST_BATCH=1): it keeps the globally best
+        # template per masking round, whereas v1.0 iterates each template
+        # independently.  By default the Rust backend runs per template
+        # (run_dali → RustDALI.iterative_search), matching Fortran.
         backend = os.environ.get('DPAM_DALI_BACKEND', 'fortran')
-        if backend in ('rust', 'auto'):
+        rust_batch = os.environ.get('DPAM_DALI_RUST_BATCH', '0') == '1'
+        if backend in ('rust', 'auto') and rust_batch:
             try:
                 import dali as _dali_check  # noqa: F401
                 use_batch = True
