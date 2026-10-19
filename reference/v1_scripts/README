@@ -1,0 +1,22 @@
+# assuming you are in the [working_dir], all other steps will be performed in the [working_dir]
+# make a directory in the [working_dir] for each proteome, i.e. [working_dir]/[proteome]/
+# download all the *.cif files for that proteome into [working_dir]/[proteome]/
+# download all the *.json files with PAE for that proteome into [working_dir]/[proteome]/
+# I am assuming the *.cif files are named like 'AF-[accession]-F1-model_v4.cif'
+# I am assuming the *.json files are named like 'AF-[accession]-F1-predicted_aligned_error_v4.json'
+# before start, cleanup the directories for [proteome]
+# this will remove all the results between step9 and step24, and should be used before running the new pipeline
+# this will also remove corrupted results in step1 - step8.
+cp /data/data1/conglab/qcong/for/domain_parser/dpam_automatic/cleanup.py ./
+nohup python cleanup.py [proteome] >& [proteome]_clean.log &
+
+# start this pipeline after finishing the cleanup step.
+# it will automatically run until step24. 
+# i did not include the step25-step27, which are used to generate web pages (you probably have your own routines)
+nohup python run_DPAM.py [proteome] [max_job_num] >& [proteome]_full.log &
+
+# if you only want to check step1 to step7, and want to run step8 elsewhere, use the following script.
+nohup python run_DPAM_half.py [proteome] [max_job_num] >& [proteome]_half.log &
+
+# if you want to start both cleanup and the pipeline, do:
+nohup $(python cleanup.py [proteome] >& [proteome]_clean.log ; python run_DPAM_half.py [proteome] [max_job_num] >& [proteome]_half.log) >/dev/null 2>&1 &

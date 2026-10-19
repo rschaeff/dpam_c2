@@ -10,7 +10,7 @@ Runs step 07 with each backend in isolated work directories, then compares:
 Usage:
     python scripts/test_dali_backends.py \
         --prefix AF-Q97ZL0-F1 \
-        --source-dir validation_swissprot \
+        --source-dir ../dpam_c2_data/validation_swissprot \
         --data-dir /home/rschaeff_1/data/dpam_reference/ecod_data \
         --cpus 4
 """

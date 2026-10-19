@@ -21,6 +21,19 @@ def test_prefix():
 
 
 @pytest.fixture(scope="session")
+def validation_data_root():
+    """
+    Root of the (untracked) validation data sets, e.g. validation_swissprot/.
+
+    Can be overridden with DPAM_VALIDATION_DIR environment variable.
+    """
+    return Path(os.getenv(
+        "DPAM_VALIDATION_DIR",
+        Path(__file__).resolve().parents[2] / "dpam_c2_data"
+    ))
+
+
+@pytest.fixture(scope="session")
 def ecod_data_dir():
     """
     ECOD reference data directory.

@@ -40,9 +40,9 @@ def ecod_data():
 
 
 @pytest.fixture(scope="session")
-def validation_dir():
+def validation_dir(validation_data_root):
     """Find validation data with pre-computed intermediate files."""
-    vdir = Path('/home/rschaeff/dev/dpam_c2/validation_swissprot')
+    vdir = validation_data_root / 'validation_swissprot'
     if not vdir.exists():
         pytest.skip("validation_swissprot directory not found")
     return vdir

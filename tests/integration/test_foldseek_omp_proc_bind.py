@@ -24,7 +24,7 @@ from dpam.tools.foldseek import Foldseek
 
 
 @pytest.fixture
-def test_structure():
+def test_structure(validation_data_root):
     """
     Provide path to a test structure file.
 
@@ -32,10 +32,9 @@ def test_structure():
     """
     # Try to find PDB files from validation or test data
     test_dirs = [
-        Path('validation_1000_run'),  # PDB files from step 1
-        Path('validation/working'),
-        Path('test_run'),
-        Path('validation_run'),
+        validation_data_root / 'validation_1000_run',  # PDB files from step 1
+        validation_data_root / 'validation_misc' / 'working',
+        validation_data_root / 'validation_run',
     ]
 
     for test_dir in test_dirs:
