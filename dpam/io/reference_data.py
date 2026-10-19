@@ -7,6 +7,7 @@ Database tables (ecod_commons schema):
   - dpam_domain_scores(ecod_num, hit_ecod_num, zscore, qscore)
 """
 
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dpam.core.models import ReferenceData
@@ -332,16 +333,21 @@ def get_db_connection(
     port: int = 45000,
     dbname: str = 'ecod_protein',
     user: str = 'ecod',
-    password: str = 'ecod#badmin'
+    password: Optional[str] = None
 ):
     """
     Get a psycopg2 connection to the ECOD database.
+
+    The password is never stored in code: it comes from the argument, then
+    DPAM_DB_PASSWORD, then libpq's own lookup (PGPASSWORD, ~/.pgpass).
 
     Returns:
         psycopg2 connection, or None if psycopg2 is not available
     """
     try:
         import psycopg2
+        if password is None:
+            password = os.environ.get('DPAM_DB_PASSWORD')
         return psycopg2.connect(
             host=host, port=port, dbname=dbname,
             user=user, password=password
