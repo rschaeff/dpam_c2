@@ -94,6 +94,29 @@ class TestStep08Scoring:
         percentile = calculate_percentile(3.0, [])
         assert percentile == -1.0
 
+    def test_qtile_ranks_raw_qscore(self, monkeypatch):
+        """qtile compares the raw qscore with the raw .info qscores."""
+        from types import SimpleNamespace
+        from dpam.steps import step08_analyze_dali as step08
+
+        # Template of 4 positions, total weight 40; reference qscores are
+        # raw weight sums on the same 0-40 scale.
+        weights = {1: 10.0, 2: 10.0, 3: 10.0, 4: 10.0}
+        info = ([1.0, 2.0, 3.0, 4.0], [10.0, 20.0, 30.0, 40.0])
+        monkeypatch.setattr(step08, 'batch_load_weights_db',
+                            lambda conn, nums: {'000000003': weights})
+        monkeypatch.setattr(step08, 'batch_load_domain_info_db',
+                            lambda conn, nums: {'000000003': info})
+        ref = SimpleNamespace(ecod_metadata={'000000003': ('e1abcA1', 'fam')})
+
+        # Aligned to positions 1-3: raw qscore 30, normalized 0.75
+        hit = ('000000003_1', 2.5, [(5, 1), (6, 2), (7, 3)], '', '', '', '')
+        [analyzed] = step08.analyze_hits([hit], ref, None, db_conn=object())
+
+        assert analyzed['qscore'] == pytest.approx(0.75)
+        assert analyzed['qtile'] == pytest.approx(0.25)  # only 40 > 30
+        assert analyzed['ztile'] == pytest.approx(0.5)   # 3, 4 > 2.5
+
 
 @pytest.mark.unit
 class TestStep09Support:

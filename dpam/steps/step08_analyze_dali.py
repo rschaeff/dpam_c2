@@ -262,9 +262,10 @@ def analyze_hits(
             total_weight = sum(weights.values())
             qscore = qscore_raw / total_weight if total_weight > 0 else 0.0
 
-            # Calculate percentiles
+            # Calculate percentiles. The .info qscores are raw weight sums,
+            # so rank the raw qscore (as v1 does), not the normalized one.
             ztile = calculate_percentile(zscore, zscores_hist)
-            qtile = calculate_percentile(qscore, qscores_hist)
+            qtile = calculate_percentile(qscore_raw, qscores_hist)
 
             analyzed_hits.append({
                 'hitname': hitname,
