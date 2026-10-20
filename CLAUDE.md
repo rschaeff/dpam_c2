@@ -456,6 +456,8 @@ cutoff = max(5, len(resids) * 0.05)
 ```
 This affects how residues are grouped into segments and is critical for matching v1.0 output.
 
+**DALI backend** (`DPAM_DALI_BACKEND` env var: `fortran` default, `rust`, `auto`): `rust` uses the `dali` (dali_cl) Python module via `RustDALI` in `tools/dali.py`, per template like v1 (`iterative_search_pdb`). Every Rust path reports through `_fortran_report()`: Z rounded to one decimal as DaliLite prints it, and the inverse superposition (R^T, -R^T t), so hit files match the Fortran path. `DPAM_DALI_RUST_BATCH=1` opts into one-call batch search (globally best template per round, *not* v1 semantics). If `{data_dir}/ECOD70_dat/` exists, Rust loads template `.dat` files from it (build with `generate_dat_files(use_fortran=True)`) instead of running Rust DSSP. A template whose search raises makes step 7 fail without `.done`; it is never counted as "no hits".
+
 **Multiprocessing pattern**: Uses `multiprocessing.Pool` with domain-level parallelism. Each ECOD domain is processed independently by a worker process. Pool size defaults to `--cpus` but can be overridden with `--dali-workers` for I/O-bound oversubscription.
 
 **Local scratch I/O** (`--scratch-dir`): When set, DALI temp dirs go to `{scratch_dir}/dpam_dali_{prefix}/` instead of NFS. Hit files remain on NFS. Workers populate a local template cache (`{scratch_dir}/dpam_dali_{prefix}/template_cache/`) via atomic rename on first access. Per-protein scratch is cleaned up in a `finally` block. When `--scratch-dir` is None, behavior is identical to before (backward compatible).

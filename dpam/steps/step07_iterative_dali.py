@@ -87,7 +87,9 @@ def run_dali(args: Tuple) -> bool:
               or (prefix, edomain, working_dir, data_dir, template_cache, scratch_base, query_pdb_dir, template_dat_dir)
 
     Returns:
-        True if any hits found
+        True if any hits found, False if none, None if the search raised.
+        None keeps errors apart from "no alignment" so step 7 is not
+        marked done with templates silently missing.
     """
     if len(args) == 8:
         prefix, edomain, working_dir, data_dir, template_cache, scratch_base, query_pdb_dir, template_dat_dir = args
@@ -224,7 +226,7 @@ def run_dali(args: Tuple) -> bool:
             logger.error(f"{edomain}: Rust iterative search failed: {e}")
             import traceback
             traceback.print_exc()
-            return False
+            return None
         finally:
             time.sleep(0.1)
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -328,7 +330,7 @@ def run_dali(args: Tuple) -> bool:
         logger.error(f"{edomain}: Exception in iterative DALI loop: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return None
     finally:
         # Clean up temporary directory (match v1.0)
         time.sleep(0.1)  # Small delay to ensure file handles are released
@@ -370,10 +372,11 @@ def run_step7(
             DALI is I/O-bound; try 4x CPUs when using local scratch.
         path_resolver: Optional PathResolver for sharded output directories
         template_dat_dir: Optional directory containing pre-computed .dat files
-            for ECOD70 templates. When provided and the Rust backend is active,
-            templates are loaded from .dat files (bypassing Rust DSSP) to
-            eliminate secondary structure divergence vs Fortran dsspcmbi.
-            Generate with: dali.import_pdb() + dali.write_dat() or Fortran DaliLite.
+            for ECOD70 templates. Defaults to data_dir/ECOD70_dat when that
+            directory exists. With the Rust backend, templates are loaded from
+            .dat files (bypassing Rust DSSP) to eliminate secondary structure
+            divergence vs Fortran dsspcmbi; the Fortran backend ignores it.
+            Generate with dpam.tools.dali.generate_dat_files(use_fortran=True).
 
     Returns:
         True if successful
@@ -391,6 +394,10 @@ def run_step7(
     step1_dir = Path(resolver.step_dir(1)).resolve()
     step6_dir = Path(resolver.step_dir(6)).resolve()
     step7_dir = Path(resolver.step_dir(7)).resolve()
+
+    if template_dat_dir is None and (data_dir / 'ECOD70_dat').is_dir():
+        template_dat_dir = data_dir / 'ECOD70_dat'
+        logger.info(f"Using template .dat files from {template_dat_dir}")
 
     # Determine worker count
     pool_size = dali_workers if dali_workers else cpus
@@ -417,9 +424,12 @@ def run_step7(
             return True
 
         # Create output directory - use absolute path
+        # Hit files are appended to, so start clean: a failed earlier run
+        # (no .done) leaves partial ones that would be duplicated.
         iterative_dir = step7_dir / f'iterativeDali_{prefix}'
-        if not iterative_dir.exists():
-            iterative_dir.mkdir(parents=True)
+        if iterative_dir.exists():
+            shutil.rmtree(iterative_dir)
+        iterative_dir.mkdir(parents=True)
 
         # Read ECOD domain candidates from step 6 - use absolute path
         hits_file = step6_dir / f'{prefix}_hits4Dali'
@@ -511,6 +521,14 @@ def run_step7(
 
             n_success = sum(1 for r in results if r)
             logger.info(f"Completed DALI for {n_success}/{len(edomains)} domains")
+
+            failed = [e for e, r in zip(edomains, results) if r is None]
+            if failed:
+                logger.error(
+                    f"DALI raised for {len(failed)}/{len(edomains)} templates "
+                    f"(e.g. {', '.join(failed[:5])}); not marking step 7 done"
+                )
+                return False
 
         # Concatenate all hits files
         final_file = step7_dir / f'{prefix}_iterativdDali_hits'
