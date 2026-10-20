@@ -59,13 +59,20 @@ def validation_proteins(validation_dir):
     return available[:2]  # Use 2 for fast tests
 
 
-def _setup_protein_dir(validation_dir, proteins, dest_dir):
-    """Copy validation protein files to test directory."""
+def _setup_protein_dir(validation_dir, proteins, dest_dir, skip_suffix=None):
+    """Copy validation protein files to test directory (flat layout).
+
+    skip_suffix leaves out the outputs of the step under test, so its
+    assertions see what the run wrote rather than the copied originals.
+    """
     dest_dir.mkdir(parents=True, exist_ok=True)
     for p in proteins:
         for f in validation_dir.glob(f'{p}*'):
-            if not f.name.startswith('.'):  # Skip state files
-                shutil.copy2(f, dest_dir / f.name)
+            if f.name.startswith('.'):  # Skip state files
+                continue
+            if skip_suffix and f.name.endswith(skip_suffix):
+                continue
+            shutil.copy2(f, dest_dir / f.name)
 
 
 # ============================================================
@@ -126,6 +133,23 @@ class TestBatchRunnerInit:
         pending = runner.state.get_pending(PipelineStep.PREPARE, ["pA"])
         assert "pA" in pending, "Without resume, step should be pending"
 
+    @pytest.mark.parametrize("sharded_dir", [False, True])
+    def test_resume_keeps_existing_layout(self, tmp_path, ecod_data, sharded_dir):
+        """resume=True keeps the working directory's layout, flat or sharded."""
+        if sharded_dir:
+            (tmp_path / 'step01_prepare').mkdir()
+
+        runner = BatchRunner(
+            proteins=["pA"],
+            working_dir=tmp_path,
+            data_dir=ecod_data,
+            cpus=1,
+            resume=True,
+            skip_addss=True,
+        )
+
+        assert runner.resolver.sharded is sharded_dir
+
 
 # ============================================================
 # Batch foldseek
@@ -142,7 +166,8 @@ class TestBatchFoldseek:
         foldseek_available,
     ):
         """Batch foldseek creates per-protein .foldseek files."""
-        _setup_protein_dir(validation_dir, validation_proteins, tmp_path)
+        _setup_protein_dir(validation_dir, validation_proteins, tmp_path,
+                           skip_suffix='.foldseek')
 
         runner = BatchRunner(
             proteins=validation_proteins,
@@ -151,6 +176,7 @@ class TestBatchFoldseek:
             cpus=2,
             resume=False,
             skip_addss=True,
+            sharded=False,
         )
         runner.run(steps=[PipelineStep.FOLDSEEK])
 
@@ -164,7 +190,8 @@ class TestBatchFoldseek:
         foldseek_available,
     ):
         """Batch foldseek marks proteins complete in batch state."""
-        _setup_protein_dir(validation_dir, validation_proteins, tmp_path)
+        _setup_protein_dir(validation_dir, validation_proteins, tmp_path,
+                           skip_suffix='.foldseek')
 
         runner = BatchRunner(
             proteins=validation_proteins,
@@ -173,6 +200,7 @@ class TestBatchFoldseek:
             cpus=2,
             resume=False,
             skip_addss=True,
+            sharded=False,
         )
         runner.run(steps=[PipelineStep.FOLDSEEK])
 
@@ -187,7 +215,8 @@ class TestBatchFoldseek:
         foldseek_available,
     ):
         """Batch foldseek creates per-protein .dpam_state.json files."""
-        _setup_protein_dir(validation_dir, validation_proteins, tmp_path)
+        _setup_protein_dir(validation_dir, validation_proteins, tmp_path,
+                           skip_suffix='.foldseek')
 
         runner = BatchRunner(
             proteins=validation_proteins,
@@ -196,6 +225,7 @@ class TestBatchFoldseek:
             cpus=2,
             resume=False,
             skip_addss=True,
+            sharded=False,
         )
         runner.run(steps=[PipelineStep.FOLDSEEK])
 
@@ -210,7 +240,8 @@ class TestBatchFoldseek:
         foldseek_available,
     ):
         """Batch foldseek results match validation data line counts."""
-        _setup_protein_dir(validation_dir, validation_proteins, tmp_path)
+        _setup_protein_dir(validation_dir, validation_proteins, tmp_path,
+                           skip_suffix='.foldseek')
 
         runner = BatchRunner(
             proteins=validation_proteins,
@@ -219,6 +250,7 @@ class TestBatchFoldseek:
             cpus=2,
             resume=False,
             skip_addss=True,
+            sharded=False,
         )
         runner.run(steps=[PipelineStep.FOLDSEEK])
 
